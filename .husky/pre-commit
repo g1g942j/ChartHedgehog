@@ -1,0 +1,9 @@
+#!/usr/bin/env sh
+
+if [ -f .env ]; then
+  export $(grep -v '^#' .env | xargs)
+fi
+
+npm --prefix chart_hedgehog run lint
+npm --prefix chart_hedgehog run stylelint
+npm --prefix chart_hedgehog run type-check

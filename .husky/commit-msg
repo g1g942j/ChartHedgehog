@@ -1,0 +1,7 @@
+#!/usr/bin/env sh
+
+if [ -f .env ]; then
+  export $(grep -v '^#' .env | xargs)
+fi
+
+npx --prefix chart_hedgehog --no -- commitlint --edit "$1"
