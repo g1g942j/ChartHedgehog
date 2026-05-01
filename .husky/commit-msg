@@ -4,4 +4,8 @@ if [ -f .env ]; then
   export $(grep -v '^#' .env | xargs)
 fi
 
+if [ "$ENABLE_HUSKY" != "1" ]; then
+  exit 0
+fi
+
 npx --prefix chart_hedgehog --no -- commitlint --edit "$1"

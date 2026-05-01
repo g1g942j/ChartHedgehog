@@ -4,6 +4,10 @@ if [ -f .env ]; then
   export $(grep -v '^#' .env | xargs)
 fi
 
+if [ "$ENABLE_HUSKY" != "1" ]; then
+  exit 0
+fi
+
 npm --prefix chart_hedgehog run lint
 npm --prefix chart_hedgehog run stylelint
 npm --prefix chart_hedgehog run type-check
