@@ -7,6 +7,12 @@ const stylelintConfig = {
     customSyntax: 'postcss-scss',
 
     rules: {
+        'selector-pseudo-class-no-unknown': [
+            true,
+            {
+                ignorePseudoClasses: ['global'],
+            },
+        ],
         'color-hex-length': 'short',
         'selector-class-pattern': null,
         'alpha-value-notation': 'number',

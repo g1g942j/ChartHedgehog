@@ -1,0 +1,7 @@
+.Select {
+    width: 100%;
+
+    :global(.MuiOutlinedInput-root) {
+        border-radius: 8px;
+    }
+}
