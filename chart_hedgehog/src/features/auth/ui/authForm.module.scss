@@ -1,0 +1,19 @@
+.Form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.Section {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding-top: 8px;
+    border-top: 1px solid #e0e0e0;
+}
+
+.SectionTitle {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 500;
+}

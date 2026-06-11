@@ -1,3 +1,5 @@
-export default function HomePage() {
-    return <main>Chart Hedgehog</main>;
+import { LoginForm } from '@/features/auth/login';
+
+export default function LoginPage() {
+    return <LoginForm />;
 }

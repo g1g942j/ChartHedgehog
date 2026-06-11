@@ -1,0 +1,37 @@
+.AuthPage {
+    display: flex;
+    gap: 48px;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 24px;
+}
+
+.Banner {
+    display: none;
+    flex-shrink: 0;
+}
+
+.Card {
+    width: 100%;
+    max-width: 420px;
+    padding: 32px;
+    background: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 12px;
+}
+
+.Title {
+    margin-bottom: 24px;
+}
+
+.Footer {
+    margin-top: 24px;
+    text-align: center;
+}
+
+@media (width >= 900px) {
+    .Banner {
+        display: block;
+    }
+}

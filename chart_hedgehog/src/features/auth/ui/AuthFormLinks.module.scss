@@ -1,0 +1,14 @@
+.Links {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.Link {
+    color: #1976d2;
+    text-decoration: none;
+
+    &:hover {
+        text-decoration: underline;
+    }
+}
