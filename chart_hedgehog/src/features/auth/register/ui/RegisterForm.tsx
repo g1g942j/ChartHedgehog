@@ -4,6 +4,7 @@ import { AuthFormAlerts } from '@/features/auth/ui/AuthFormAlerts';
 import { AuthFormLinks } from '@/features/auth/ui/AuthFormLinks';
 import { AuthPageLayout } from '@/features/auth/ui/AuthPageLayout';
 import { Form, FormTextField } from '@/shared/form';
+import { useLocale } from '@/shared/i18n';
 import { Button } from '@/shared/ui/Button';
 
 import formStyles from '../../ui/authForm.module.scss';
@@ -13,16 +14,18 @@ import { useRegisterForm } from '../model/useRegisterForm';
 export function RegisterForm() {
     const { methods, isPending, onSubmit, submitError, successMessage } =
         useRegisterForm();
+    const { t } = useLocale();
 
     return (
         <AuthPageLayout
-            title="Регистрация"
+            title={t.auth.registerTitle}
             footer={
                 <AuthFormLinks
                     links={[
                         {
                             href: '/',
-                            label: 'Уже есть аккаунт? Войти',
+                            prefix: t.auth.loginPrompt,
+                            label: t.auth.loginAction,
                         },
                     ]}
                 />
@@ -39,30 +42,30 @@ export function RegisterForm() {
             >
                 <FormTextField
                     name="username"
-                    label="Имя пользователя"
+                    label={t.auth.usernameLabel}
                     autoComplete="username"
                 />
                 <FormTextField
                     name="email"
-                    label="Email"
+                    label={t.auth.emailLabel}
                     type="email"
                     autoComplete="email"
                 />
                 <FormTextField
                     name="password"
-                    label="Пароль"
+                    label={t.auth.passwordLabel}
                     type="password"
                     autoComplete="new-password"
                 />
                 <FormTextField
                     name="confirmPassword"
-                    label="Подтвердите пароль"
+                    label={t.auth.confirmPasswordLabel}
                     type="password"
                     autoComplete="new-password"
                 />
                 <FormTextField
                     name="fullName"
-                    label="Полное имя"
+                    label={t.auth.fullNameLabel}
                     autoComplete="name"
                 />
                 <Button
@@ -71,7 +74,7 @@ export function RegisterForm() {
                     loading={isPending}
                     fullWidth
                 >
-                    Зарегистрироваться
+                    {t.auth.registerButton}
                 </Button>
             </Form>
         </AuthPageLayout>

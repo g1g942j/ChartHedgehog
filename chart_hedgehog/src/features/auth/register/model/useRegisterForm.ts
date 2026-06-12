@@ -1,25 +1,32 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { type SubmitHandler, useForm } from 'react-hook-form';
 
+import { useLocale } from '@/shared/i18n';
+
 import { registerUser } from '../api/register';
 import {
+    createRegisterSchema,
     type RegisterFormValues,
-    registerSchema,
 } from './registerSchema';
 
 export function useRegisterForm() {
     const router = useRouter();
+    const { t } = useLocale();
     const [isPending, setIsPending] = useState(false);
     const [submitError, setSubmitError] = useState<string | null>(null);
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
+    const schema = useMemo(
+        () => createRegisterSchema(t.auth.validation),
+        [t.auth.validation],
+    );
 
     const methods = useForm<RegisterFormValues>({
-        resolver: zodResolver(registerSchema),
+        resolver: zodResolver(schema),
         defaultValues: {
             username: '',
             email: '',
@@ -36,14 +43,14 @@ export function useRegisterForm() {
 
         try {
             const response = await registerUser(data);
-            setSuccessMessage(`${response.message} Перенаправление на вход...`);
+            setSuccessMessage(`${response.message} ${t.auth.redirectToLogin}`);
             methods.reset();
             setTimeout(() => router.push('/'), 1500);
         } catch (error) {
             const message =
                 error instanceof Error
                     ? error.message
-                    : 'Не удалось зарегистрироваться';
+                    : t.auth.registerFallbackError;
             setSubmitError(message);
         } finally {
             setIsPending(false);
