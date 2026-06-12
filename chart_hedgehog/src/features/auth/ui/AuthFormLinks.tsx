@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 
+import { useLocale } from '@/shared/i18n';
 import { Typography } from '@/shared/ui/Typography';
 
 import styles from './AuthFormLinks.module.scss';
@@ -9,6 +10,7 @@ import styles from './AuthFormLinks.module.scss';
 type AuthLink = {
     href: string;
     label: string;
+    prefix?: string;
 };
 
 type AuthFormLinksProps = {
@@ -17,15 +19,17 @@ type AuthFormLinksProps = {
 
 export function AuthFormLinks(props: AuthFormLinksProps) {
     const { links } = props;
+    const { t } = useLocale();
 
     return (
-        <nav className={styles.Links} aria-label="Навигация по формам авторизации">
+        <nav className={styles.Links} aria-label={t.auth.navigationLabel}>
             {links.map((link) => (
-                <Link key={link.href} href={link.href} className={styles.Link}>
-                    <Typography variant="body2" component="span">
+                <Typography key={link.href} variant="body2" component="span">
+                    {link.prefix ? `${link.prefix} ` : null}
+                    <Link href={link.href} className={styles.Link}>
                         {link.label}
-                    </Typography>
-                </Link>
+                    </Link>
+                </Typography>
             ))}
         </nav>
     );

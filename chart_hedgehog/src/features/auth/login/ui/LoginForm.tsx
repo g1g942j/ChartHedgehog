@@ -4,6 +4,7 @@ import { AuthFormAlerts } from '@/features/auth/ui/AuthFormAlerts';
 import { AuthFormLinks } from '@/features/auth/ui/AuthFormLinks';
 import { AuthPageLayout } from '@/features/auth/ui/AuthPageLayout';
 import { Form, FormTextField } from '@/shared/form';
+import { useLocale } from '@/shared/i18n';
 import { Button } from '@/shared/ui/Button';
 
 import formStyles from '../../ui/authForm.module.scss';
@@ -12,16 +13,18 @@ import { useLoginForm } from '../model/useLoginForm';
 
 export function LoginForm() {
     const { methods, isPending, onSubmit, submitError } = useLoginForm();
+    const { t } = useLocale();
 
     return (
         <AuthPageLayout
-            title="Вход"
+            title={t.auth.loginTitle}
             footer={
                 <AuthFormLinks
                     links={[
                         {
                             href: '/register',
-                            label: 'Нет аккаунта? Зарегистрироваться',
+                            prefix: t.auth.registerPrompt,
+                            label: t.auth.registerAction,
                         },
                     ]}
                 />
@@ -34,13 +37,14 @@ export function LoginForm() {
                 className={formStyles.Form}
             >
                 <FormTextField
-                    name="username"
-                    label="Имя пользователя"
-                    autoComplete="username"
+                    name="email"
+                    label={t.auth.emailLabel}
+                    type="email"
+                    autoComplete="email"
                 />
                 <FormTextField
                     name="password"
-                    label="Пароль"
+                    label={t.auth.passwordLabel}
                     type="password"
                     autoComplete="current-password"
                 />
@@ -50,7 +54,7 @@ export function LoginForm() {
                     loading={isPending}
                     fullWidth
                 >
-                    Войти
+                    {t.auth.loginButton}
                 </Button>
             </Form>
         </AuthPageLayout>

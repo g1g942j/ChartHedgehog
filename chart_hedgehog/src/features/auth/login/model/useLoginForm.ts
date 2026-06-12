@@ -1,23 +1,30 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { type SubmitHandler, useForm } from 'react-hook-form';
 
+import { useLocale } from '@/shared/i18n';
+
 import { loginUser } from '../api/login';
-import { type LoginFormValues, loginSchema } from './loginSchema';
+import { createLoginSchema, type LoginFormValues } from './loginSchema';
 
 export function useLoginForm() {
     const router = useRouter();
+    const { t } = useLocale();
     const [isPending, setIsPending] = useState(false);
     const [submitError, setSubmitError] = useState<string | null>(null);
+    const schema = useMemo(
+        () => createLoginSchema(t.auth.validation),
+        [t.auth.validation],
+    );
 
     const methods = useForm<LoginFormValues>({
-        resolver: zodResolver(loginSchema),
+        resolver: zodResolver(schema),
         defaultValues: {
-            username: '',
+            email: '',
             password: '',
         },
     });
@@ -31,7 +38,7 @@ export function useLoginForm() {
             router.push('/diagrams');
         } catch (error) {
             const message =
-                error instanceof Error ? error.message : 'Не удалось войти';
+                error instanceof Error ? error.message : t.auth.loginFallbackError;
             setSubmitError(message);
         } finally {
             setIsPending(false);

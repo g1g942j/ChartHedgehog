@@ -1,0 +1,19 @@
+.ThemeToggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    min-width: auto;
+    height: 40px;
+    padding: 0;
+    color: var(--text-color);
+    text-transform: none;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    box-shadow: var(--shadow);
+
+    &:hover {
+        background: var(--bg-soft);
+    }
+}

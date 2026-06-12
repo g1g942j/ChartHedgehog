@@ -7,18 +7,19 @@ export type LoginResponse = {
 };
 
 export async function loginUser(data: {
-    username: string;
+    email: string;
     password: string;
 }): Promise<LoginResponse> {
-    const username = data.username.trim();
-    if (!username || !data.password) {
-        throw new Error('Введите логин и пароль');
+    const email = data.email.trim();
+    if (!email || !data.password) {
+        throw new Error('Введите email и пароль');
     }
+    const username = email.split('@')[0] || email;
 
     setSessionUser({
         id: 1,
         username,
-        email: `${username}@local.dev`,
+        email,
         role: 'USER',
         fullName: username,
     });
