@@ -4,6 +4,7 @@ import com.example.backend.dto.RegisterRequest;
 import com.example.backend.entity.Role;
 import com.example.backend.entity.User;
 import com.example.backend.repository.UserRepository;
+import jakarta.transaction.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -59,5 +60,48 @@ public class UserService implements UserDetailsService {
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
         return userRepository.findByUsername(username)
                 .orElseThrow(() -> new UsernameNotFoundException("User not found: " + username));
+    }
+
+    @Transactional
+    public User updateProfile(Long userId, String fullName, String email) {
+        User user = findById(userId);
+
+        if (fullName != null && !fullName.isBlank()) {
+            user.setFullName(fullName);
+        }
+
+        if (email != null && !email.isBlank()) {
+            userRepository.findByEmail(email).ifPresent(existingUser -> {
+                if (!existingUser.getId().equals(userId)) {
+                    throw new RuntimeException("Email already in use");
+                }
+            });
+            user.setEmail(email);
+        }
+
+        return userRepository.save(user);
+    }
+
+    @Transactional
+    public void changePassword(Long userId, String oldPassword, String newPassword) {
+        User user = findById(userId);
+
+        if (!passwordEncoder.matches(oldPassword, user.getPassword())) {
+            throw new RuntimeException("Old password is incorrect");
+        }
+
+        if (newPassword == null || newPassword.length() < 6) {
+            throw new RuntimeException("New password must be at least 6 characters");
+        }
+
+        user.setPassword(passwordEncoder.encode(newPassword));
+        userRepository.save(user);
+    }
+
+    @Transactional
+    public void deactivateAccount(Long userId) {
+        User user = findById(userId);
+        user.setIsActive(false);
+        userRepository.save(user);
     }
 }

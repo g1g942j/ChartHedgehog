@@ -9,7 +9,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/diagrams")
@@ -56,8 +58,14 @@ public class DiagramController {
     }
 
     @GetMapping
-    public ResponseEntity<List<Diagram>> getAllDiagrams() {
-        return ResponseEntity.ok(diagramService.getAllDiagrams());
+    public ResponseEntity<?> getAllDiagrams() {
+        try {
+            Long currentUserId = userService.getCurrentUser().getId();
+            List<Diagram> diagrams = diagramService.getMyDiagrams(currentUserId);
+            return ResponseEntity.ok(diagrams);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
     }
     @PostMapping("/{diagramId}/participants/{userId}")
     public ResponseEntity<?> addParticipant(@PathVariable Long diagramId,
@@ -91,6 +99,58 @@ public class DiagramController {
             return ResponseEntity.ok(participants);
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(e.getMessage());
+        }
+    }
+
+    @GetMapping("/my")
+    public ResponseEntity<?> getMyDiagrams() {
+        try {
+            Long currentUserId = userService.getCurrentUser().getId();
+            List<Diagram> diagrams = diagramService.getMyDiagrams(currentUserId);
+            return ResponseEntity.ok(diagrams);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<?> updateDiagram(@PathVariable Long id,
+                                           @RequestBody Map<String, String> updates) {
+        try {
+            Long currentUserId = userService.getCurrentUser().getId();
+            String name = updates.get("name");
+            String description = updates.get("description");
+
+            Diagram diagram = diagramService.updateDiagram(id, name, description, currentUserId);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("message", "Diagram updated successfully");
+            response.put("id", diagram.getId());
+            response.put("name", diagram.getName());
+            response.put("description", diagram.getDescription());
+
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @GetMapping("/{id}/access")
+    public ResponseEntity<?> getUserRoleInDiagram(@PathVariable Long id) {
+        try {
+            Long currentUserId = userService.getCurrentUser().getId();
+            ParticipantRole role = diagramService.getUserRoleInDiagram(id, currentUserId);
+
+            if (role == null) {
+                return ResponseEntity.status(403).body(Map.of("error", "Access denied"));
+            }
+
+            return ResponseEntity.ok(Map.of(
+                    "role", role.name(),
+                    "canEdit", role == ParticipantRole.OWNER || role == ParticipantRole.EDITOR
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
 }

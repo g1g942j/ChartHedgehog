@@ -7,6 +7,8 @@ import com.example.backend.repository.DiagramRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import java.util.ArrayList;
+import java.util.stream.Collectors;
 
 import java.util.List;
 
@@ -107,5 +109,56 @@ public class DiagramService {
                             return false;
                     }
                 });
+    }
+
+    public List<Diagram> getMyDiagrams(Long userId) {
+        User user = userService.findById(userId);
+
+
+        List<Diagram> ownedDiagrams = diagramRepository.findByOwner(user);
+
+
+        List<Diagram> participatedDiagrams = user.getParticipatedDiagrams();
+
+        List<Diagram> allDiagrams = new ArrayList<>();
+        allDiagrams.addAll(ownedDiagrams);
+        allDiagrams.addAll(participatedDiagrams);
+
+        return allDiagrams.stream().distinct().collect(Collectors.toList());
+    }
+
+    @Transactional
+    public Diagram updateDiagram(Long id, String name, String description, Long userId) {
+        Diagram diagram = findById(id);
+
+        if (!hasAccess(id, userId, ParticipantRole.EDITOR)) {
+            throw new RuntimeException("Access denied: You don't have permission to edit this diagram");
+        }
+
+        if (name != null && !name.isBlank()) {
+            diagram.setName(name);
+        }
+
+        if (description != null) {
+            diagram.setDescription(description);
+        }
+
+        return diagramRepository.save(diagram);
+    }
+
+    public ParticipantRole getUserRoleInDiagram(Long diagramId, Long userId) {
+        Diagram diagram = findById(diagramId);
+
+
+        if (diagram.getOwner().getId().equals(userId)) {
+            return ParticipantRole.OWNER;
+        }
+
+
+        return diagram.getParticipantRoles().stream()
+                .filter(p -> p.getUser().getId().equals(userId))
+                .map(DiagramParticipant::getRole)
+                .findFirst()
+                .orElse(null);
     }
 }

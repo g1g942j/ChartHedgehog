@@ -97,4 +97,54 @@ public class AuthController {
 
         return ResponseEntity.ok(response);
     }
+
+    @PutMapping("/me")
+    public ResponseEntity<?> updateProfile(@RequestBody Map<String, String> updates) {
+        try {
+            User currentUser = userService.getCurrentUser();
+            String fullName = updates.get("fullName");
+            String email = updates.get("email");
+
+            User updatedUser = userService.updateProfile(currentUser.getId(), fullName, email);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("message", "Profile updated successfully");
+            response.put("username", updatedUser.getUsername());
+            response.put("email", updatedUser.getEmail());
+            response.put("fullName", updatedUser.getFullName());
+
+            return ResponseEntity.ok(response);
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PutMapping("/me/password")
+    public ResponseEntity<?> changePassword(@RequestBody Map<String, String> passwords) {
+        try {
+            User currentUser = userService.getCurrentUser();
+            String oldPassword = passwords.get("oldPassword");
+            String newPassword = passwords.get("newPassword");
+
+            userService.changePassword(currentUser.getId(), oldPassword, newPassword);
+
+            return ResponseEntity.ok(Map.of("message", "Password changed successfully"));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @DeleteMapping("/me")
+    public ResponseEntity<?> deactivateAccount() {
+        try {
+            User currentUser = userService.getCurrentUser();
+            userService.deactivateAccount(currentUser.getId());
+
+            SecurityContextHolder.clearContext();
+
+            return ResponseEntity.ok(Map.of("message", "Account deactivated successfully"));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
 }
