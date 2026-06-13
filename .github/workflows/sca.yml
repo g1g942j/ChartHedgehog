@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: back
+        working-directory: backend
     steps:
       - uses: actions/checkout@v4
 
@@ -25,8 +25,8 @@ jobs:
       - name: Cache NVD database
         uses: actions/cache@v4
         with:
-          path: back/.dependency-check-data
-          key: dependency-check-nvd-${{ runner.os }}-${{ hashFiles('back/pom.xml') }}
+          path: backend/.dependency-check-data
+          key: dependency-check-nvd-${{ runner.os }}-${{ hashFiles('backend/pom.xml') }}
           restore-keys: |
             dependency-check-nvd-${{ runner.os }}-
 
@@ -40,17 +40,35 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: backend отчёт проверки
-          path: back/target/dependency-check-report.html
+          path: backend/target/dependency-check-report.html
 
   npm-sca:
     name: Анализ зависимостей frontend
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: front
+        working-directory: chart_hedgehog
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: chart_hedgehog/package-lock.json
+
+      - name: Установка зависимостей
+        run: npm ci
+
       - name: npm audit
-        if: hashFiles('package.json', 'front/package.json') != ''
         run: npm audit --audit-level=high
+
+      - name: Загрузка npm audit отчёта
+        if: always()
+        run: npm audit --json > npm-audit-report.json || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: frontend отчёт проверки
+          path: chart_hedgehog/npm-audit-report.json
