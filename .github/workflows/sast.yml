@@ -3,12 +3,13 @@ name: Статический анализ безопасности (SAST)
 on:
   workflow_call:
 
+permissions:
+  security-events: write
+
 jobs:
   semgrep-backend:
     name: Semgrep — анализ backend
     runs-on: ubuntu-latest
-    permissions:
-      security-events: write
     steps:
       - uses: actions/checkout@v4
 
@@ -33,8 +34,6 @@ jobs:
   semgrep-frontend:
     name: Semgrep — анализ frontend
     runs-on: ubuntu-latest
-    permissions:
-      security-events: write
     steps:
       - uses: actions/checkout@v4
 
