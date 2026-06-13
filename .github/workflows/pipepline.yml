@@ -6,12 +6,15 @@ on:
   pull_request:
 
 jobs:
+  sast:
+    uses: ./.github/workflows/sast.yml
+
   sca:
     uses: ./.github/workflows/sca.yml
     secrets:
       NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
 
   dast:
-    needs: sca
+    needs: [sast, sca]
     if: always()
     uses: ./.github/workflows/dast.yml

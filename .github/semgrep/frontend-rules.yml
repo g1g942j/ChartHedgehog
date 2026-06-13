@@ -1,0 +1,64 @@
+rules:
+  - id: react-dangerous-inner-html
+    message: |
+      dangerouslySetInnerHTML с динамическим значением — возможен XSS
+    severity: ERROR
+    languages: [typescript, javascript]
+    pattern: |
+      <$EL dangerouslySetInnerHTML={{ __html: $INPUT }} />
+    metadata:
+      cwe: CWE-79
+      owasp: "A03:2021 - Injection"
+
+  - id: next-public-secret
+    message: Переменная NEXT_PUBLIC_ доступна в браузере
+    severity: ERROR
+    languages: [typescript, javascript]
+    patterns:
+      - pattern: |
+          process.env.NEXT_PUBLIC_$SECRET_KEY
+      - metavariable-regex:
+          metavariable: $SECRET_KEY
+          regex: ".*(SECRET|TOKEN|KEY|PASSWORD|PASS|PWD).*"
+    metadata:
+      cwe: CWE-312
+      owasp: "A02:2021 - Cryptographic Failures"
+
+  - id: no-eval
+    message: eval() выполняет произвольный код
+    severity: ERROR
+    languages: [typescript, javascript]
+    pattern: eval($INPUT)
+    metadata:
+      cwe: CWE-95
+      owasp: "A03:2021 - Injection"
+
+  - id: open-redirect
+    message: |
+      Редирект на URL из пользовательского ввода — возможен open redirect
+    severity: WARNING
+    languages: [typescript, javascript]
+    pattern-either:
+      - patterns:
+          - pattern: router.push($INPUT)
+          - pattern-not: router.push("...")
+      - patterns:
+          - pattern: router.replace($INPUT)
+          - pattern-not: router.replace("...")
+    metadata:
+      cwe: CWE-601
+      owasp: "A01:2021 - Broken Access Control"
+
+  - id: sensitive-data-in-localstorage
+    message: |
+      Токен или пароль сохраняется в localStorage — доступен через XSS
+    severity: WARNING
+    languages: [typescript, javascript]
+    patterns:
+      - pattern: localStorage.setItem($KEY, $TOKEN)
+      - metavariable-regex:
+          metavariable: $KEY
+          regex: ".*(token|auth|jwt|password|secret).*"
+    metadata:
+      cwe: CWE-312
+      owasp: "A02:2021 - Cryptographic Failures"

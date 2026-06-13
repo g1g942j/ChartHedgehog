@@ -1,0 +1,68 @@
+rules:
+  - id: raw-sql-with-user-input
+    message: Конкатенация пользовательского ввода в SQL-запросе — возможна SQL-инъекция
+    severity: ERROR
+    languages: [java]
+    pattern-either:
+      - pattern: $CONN.createQuery("..." + $INPUT)
+      - pattern: $CONN.createNativeQuery("..." + $INPUT)
+      - pattern: $CONN.createQuery($PREFIX + $INPUT)
+    metadata:
+      cwe: CWE-89
+      owasp: "A03:2021 - Injection"
+
+  - id: hardcoded-jwt-secret
+    message: JWT-секрет задан прямо в коде
+    severity: ERROR
+    languages: [java]
+    patterns:
+      - pattern: |
+          $JWT.sign($ALGO, "$SECRET")
+      - pattern: |
+          Keys.hmacShaKeyFor("$SECRET".getBytes(...))
+    metadata:
+      cwe: CWE-798
+      owasp: "A02:2021 - Cryptographic Failures"
+
+
+  - id: insecure-object-deserialization
+    message: ObjectInputStream десериализует данные без проверки типов — возможно RCE
+    severity: ERROR
+    languages: [java]
+    pattern: |
+      new ObjectInputStream($INPUT).readObject()
+    metadata:
+      cwe: CWE-502
+      owasp: "A08:2021 - Software and Data Integrity Failures"
+
+  - id: csrf-disabled
+    message: CSRF-защита отключена явно
+    severity: WARNING
+    languages: [java]
+    pattern: |
+      $HTTP.csrf(AbstractHttpConfigurer::disable)
+    metadata:
+      cwe: CWE-352
+      owasp: "A01:2021 - Broken Access Control"
+
+  - id: frame-options-disabled
+    message: Защита от clickjacking отключена (frameOptions disable)
+    severity: WARNING
+    languages: [java]
+    pattern: |
+      $HTTP.headers(h -> h.frameOptions(HeadersConfigurer.FrameOptionsConfig::disable))
+    metadata:
+      cwe: CWE-1021
+
+  - id: logging-sensitive-data
+    message: Пароль или токен попадает в лог
+    severity: WARNING
+    languages: [java]
+    patterns:
+      - pattern: |
+          log.$LEVEL("..." + $OBJ.getPassword())
+      - pattern: |
+          log.$LEVEL("..." + $OBJ.getToken())
+    metadata:
+      cwe: CWE-312
+      owasp: "A09:2021 - Security Logging and Monitoring Failures"
