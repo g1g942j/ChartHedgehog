@@ -1,0 +1,75 @@
+.Navbar {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    display: flex;
+    gap: 24px;
+    align-items: center;
+    min-height: 64px;
+    padding: 12px max(16px, 5vw);
+    color: var(--text-color);
+    background: color-mix(in oklab, var(--surface) 92%, transparent);
+    border-bottom: 1px solid var(--border);
+    box-shadow: 0 8px 24px rgb(0 0 0 / 0.08);
+    backdrop-filter: blur(14px);
+}
+
+.Brand {
+    display: inline-flex;
+    gap: 10px;
+    align-items: center;
+    font-weight: 700;
+    color: var(--text-color);
+    text-decoration: none;
+}
+
+.BrandMark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    color: var(--primary-contrast);
+    background: var(--primary);
+    border-radius: 999px;
+}
+
+.NavLinks {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.NavLink {
+    color: var(--text-color);
+    text-transform: none;
+}
+
+.NavLinkActive {
+    color: var(--primary);
+}
+
+.RightSide {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    margin-left: auto;
+}
+
+.UserButton {
+    color: var(--text-color);
+    text-transform: none;
+}
+
+@media (width <= 700px) {
+    .Navbar {
+        flex-wrap: wrap;
+        gap: 12px;
+    }
+
+    .RightSide {
+        justify-content: space-between;
+        width: 100%;
+        margin-left: 0;
+    }
+}

@@ -1,0 +1,69 @@
+.Page {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    width: 100%;
+    max-width: 1120px;
+    min-height: calc(100vh - 64px);
+    padding: 32px 24px;
+    margin: 0 auto;
+}
+
+.HeaderRow {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.Card {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 24px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+}
+
+.ProfileGrid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 24px;
+    align-items: stretch;
+}
+
+.ProfileGrid .Card {
+    height: 100%;
+}
+
+.ProfileGrid .Actions {
+    margin-top: auto;
+}
+
+.Actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.DangerCard {
+    border-color: color-mix(in srgb, #d32f2f 40%, var(--border));
+}
+
+.SectionTitle {
+    margin-top: 0;
+    margin-bottom: 4px;
+}
+
+.PasswordHint {
+    margin-top: 8px;
+}
+
+@media (width >= 900px) {
+    .ProfileGrid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}

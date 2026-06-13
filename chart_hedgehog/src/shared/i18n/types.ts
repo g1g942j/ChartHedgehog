@@ -7,6 +7,7 @@ export type AppTranslations = {
         profile: string;
         home: string;
         diagrams: string;
+        logout: string;
         participants: string;
         diagram: string;
         backToList: string;
@@ -59,6 +60,19 @@ export type AppTranslations = {
         email: string;
         fullName: string;
         role: string;
+        saveProfile: string;
+        profileSaved: string;
+        passwordTitle: string;
+        oldPassword: string;
+        newPassword: string;
+        confirmPassword: string;
+        changePassword: string;
+        passwordChanged: string;
+        passwordsMismatch: string;
+        dangerZone: string;
+        deleteDescription: string;
+        deleteAccount: string;
+        deleteConfirm: string;
     };
     diagrams: {
         title: string;
@@ -77,13 +91,26 @@ export type AppTranslations = {
         enterDiagramName: string;
         loadError: string;
         createError: string;
+        settingsTitle: string;
+        saveSettings: string;
+        deleteDiagram: string;
+        deleteConfirm: (name: string) => string;
+        updateError: string;
+        deleteError: string;
         canvasTitle: string;
         canvasDescription: string;
+        templateLabel: string;
+        applyTemplate: string;
+        editorLabel: string;
+        umlBlocks: string;
+        canvasHint: string;
+        saveContent: string;
+        saveContentError: string;
     };
     participants: {
         addTitle: string;
         addDescription: string;
-        userId: string;
+        userIdentifier: string;
         role: string;
         add: string;
         title: (count: number) => string;
