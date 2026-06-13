@@ -5,6 +5,7 @@ on:
 
 permissions:
   security-events: write
+  contents: read
 
 jobs:
   semgrep-backend:
