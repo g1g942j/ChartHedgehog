@@ -1,0 +1,12 @@
+name: поднятие таски
+
+on:
+  push:
+    branches: [main, master, DevSecOps]
+  pull_request:
+
+jobs:
+  sca:
+    uses: ./.github/workflows/sca.yml
+    secrets:
+      NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
