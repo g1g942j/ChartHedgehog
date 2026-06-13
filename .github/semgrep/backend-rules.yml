@@ -39,8 +39,9 @@ rules:
     message: CSRF-защита отключена явно
     severity: WARNING
     languages: [java]
-    pattern: |
-      $HTTP.csrf(AbstractHttpConfigurer::disable)
+    pattern-either:
+      - pattern: $HTTP.csrf(AbstractHttpConfigurer::disable)
+      - pattern: $HTTP.csrf($X -> $X.disable())
     metadata:
       cwe: CWE-352
       owasp: "A01:2021 - Broken Access Control"

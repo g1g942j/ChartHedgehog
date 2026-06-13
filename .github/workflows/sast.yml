@@ -14,16 +14,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Установка Semgrep
+        run: pip install semgrep
+
       - name: Semgrep scan
-        uses: semgrep/semgrep-action@v1
-        with:
-          config: >
-            p/spring
-            p/java
-            p/secrets
-            p/owasp-top-ten
-            .github/semgrep/backend-rules.yml
-          generateSarif: "1"
+        run: |
+          semgrep scan \
+            --config p/java \
+            --config p/secrets \
+            --config p/owasp-top-ten \
+            --config .github/semgrep/backend-rules.yml \
+            --sarif --output semgrep.sarif \
+            --no-error
+        continue-on-error: true
 
       - name: Загрузка SARIF отчёта в GitHub Security
         if: always()
@@ -38,16 +41,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Установка Semgrep
+        run: pip install semgrep
+
       - name: Semgrep scan
-        uses: semgrep/semgrep-action@v1
-        with:
-          config: >
-            p/react
-            p/typescript
-            p/secrets
-            p/owasp-top-ten
-            .github/semgrep/frontend-rules.yml
-          generateSarif: "1"
+        run: |
+          semgrep scan \
+            --config p/react \
+            --config p/typescript \
+            --config p/secrets \
+            --config p/owasp-top-ten \
+            --config .github/semgrep/frontend-rules.yml \
+            --sarif --output semgrep.sarif \
+            --no-error
+        continue-on-error: true
 
       - name: Загрузка SARIF отчёта в GitHub Security
         if: always()

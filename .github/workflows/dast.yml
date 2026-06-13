@@ -3,6 +3,10 @@ name: Динамический анализ безопасности (DAST)
 on:
   workflow_call:
 
+permissions:
+  security-events: write
+  contents: read
+
 jobs:
   zap-backend:
     name: OWASP ZAP — сканирование backend
