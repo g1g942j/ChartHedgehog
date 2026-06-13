@@ -10,3 +10,8 @@ jobs:
     uses: ./.github/workflows/sca.yml
     secrets:
       NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+
+  dast:
+    needs: sca
+    if: always()
+    uses: ./.github/workflows/dast.yml
