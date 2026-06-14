@@ -4,7 +4,10 @@ import type { AppTranslations } from '@/shared/i18n';
 
 export function createLoginSchema(t: AppTranslations['auth']['validation']) {
     return z.object({
-        email: z.email(t.emailInvalid),
+        username: z
+            .string()
+            .min(3, t.usernameMin)
+            .max(50, t.usernameMax),
         password: z
             .string()
             .min(6, t.passwordMin)

@@ -1,3 +1,5 @@
+import { apiFetch } from '@/shared/api/client';
+
 import type { RegisterFormValues } from '../model/registerSchema';
 
 export type RegisterResponse = {
@@ -16,9 +18,13 @@ export async function registerUser(
         throw new Error('Заполните обязательные поля');
     }
 
-    return {
-        message: 'Регистрация завершена (локальный режим, без бэкенда)',
-        username,
-        email,
-    };
+    return apiFetch<RegisterResponse>('/api/auth/register', {
+        method: 'POST',
+        body: JSON.stringify({
+            username,
+            email,
+            password: data.password,
+            fullName: data.fullName?.trim() || undefined,
+        }),
+    });
 }

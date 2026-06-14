@@ -37,10 +37,10 @@ export function LoginForm() {
                 className={formStyles.Form}
             >
                 <FormTextField
-                    name="email"
-                    label={t.auth.emailLabel}
-                    type="email"
-                    autoComplete="email"
+                    name="username"
+                    label={t.auth.usernameLabel}
+                    type="text"
+                    autoComplete="username"
                 />
                 <FormTextField
                     name="password"
