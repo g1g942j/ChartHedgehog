@@ -39,7 +39,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: backend отчёт проверки
+          name: sca-dependency-check-backend
           path: backend/target/dependency-check-report.html
 
   npm-sca:
@@ -70,5 +70,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: frontend отчёт проверки
+          name: sca-npm-audit-frontend
           path: chart_hedgehog/npm-audit-report.json

@@ -48,7 +48,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: zap-backend-отчёт
+          name: dast-zap-backend
           path: |
             report_html.html
             report_json.json
@@ -95,7 +95,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: zap-frontend-отчёт
+          name: dast-zap-frontend
           path: |
             report_html.html
             report_json.json
