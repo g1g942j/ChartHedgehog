@@ -21,10 +21,10 @@ export function useLoginForm() {
         [t.auth.validation],
     );
 
-    const methods = useForm<LoginFormValues>({
+    const methods = useForm<LoginFormValues, unknown, LoginFormValues>({
         resolver: zodResolver(schema),
         defaultValues: {
-            email: '',
+            username: '',
             password: '',
         },
     });
