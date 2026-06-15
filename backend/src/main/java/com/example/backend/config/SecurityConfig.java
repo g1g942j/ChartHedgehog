@@ -66,7 +66,7 @@ public class SecurityConfig {
                 .headers(headers -> headers
                         .frameOptions(frame -> frame.sameOrigin())
                         .contentSecurityPolicy(csp -> csp // Решение(2DAST) Решение(3DAST)
-                                .policyDirectives("default-src 'self'; frame-ancestors 'self'")
+                                .policyDirectives("default-src 'self'; frame-ancestors 'self'; form-action 'self'") // Решение(4DAST)
                         )
                         .addHeaderWriter((request, response) -> {
                             response.setHeader("Cross-Origin-Opener-Policy", "same-origin"); // Решение(6DAST)
