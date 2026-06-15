@@ -4,7 +4,6 @@ on:
   workflow_call:
 
 permissions:
-  security-events: write
   contents: read
 
 jobs:
@@ -28,12 +27,12 @@ jobs:
             --no-error
         continue-on-error: true
 
-      - name: Загрузка SARIF отчёта в GitHub Security
+      - name: Загрузка SARIF отчёта
         if: always()
-        uses: github/codeql-action/upload-sarif@v4
+        uses: actions/upload-artifact@v4
         with:
-          sarif_file: semgrep.sarif
-          category: semgrep-backend
+          name: sarif-backend
+          path: semgrep.sarif
 
   semgrep-frontend:
     name: Semgrep — анализ frontend
@@ -56,9 +55,9 @@ jobs:
             --no-error
         continue-on-error: true
 
-      - name: Загрузка SARIF отчёта в GitHub Security
+      - name: Загрузка SARIF отчёта
         if: always()
-        uses: github/codeql-action/upload-sarif@v4
+        uses: actions/upload-artifact@v4
         with:
-          sarif_file: semgrep.sarif
-          category: semgrep-frontend
+          name: sarif-frontend
+          path: semgrep.sarif

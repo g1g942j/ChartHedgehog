@@ -6,7 +6,6 @@ on:
   pull_request:
 
 permissions:
-  security-events: write
   contents: read
 
 jobs:
