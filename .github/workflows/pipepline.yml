@@ -16,6 +16,8 @@ jobs:
     uses: ./.github/workflows/sca.yml
     secrets:
       NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+      OSSINDEX_USERNAME: ${{ secrets.OSSINDEX_USERNAME }}
+      OSSINDEX_TOKEN: ${{ secrets.OSSINDEX_TOKEN }}
 
   dast:
     # needs: [sast, sca]
