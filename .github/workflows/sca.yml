@@ -25,7 +25,7 @@ jobs:
       - name: Cache NVD database
         uses: actions/cache@v4
         with:
-          path: backend/.dependency-check-data
+          path: ~/.cache/dependency-check-data
           key: dependency-check-nvd-${{ runner.os }}-${{ hashFiles('backend/pom.xml') }}
           restore-keys: |
             dependency-check-nvd-${{ runner.os }}-
@@ -33,7 +33,7 @@ jobs:
       - name: OWASP Dependency-Check
         env:
           NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
-        run: mvn -B dependency-check:check
+        run: mvn -B dependency-check:check -Dodc.dataDirectory=$HOME/.cache/dependency-check-data
 
       - name: Загрузка отчёта
         if: always()
