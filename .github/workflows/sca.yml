@@ -26,7 +26,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/dependency-check-data
-          key: dependency-check-nvd-${{ runner.os }}-${{ hashFiles('backend/pom.xml') }}
+          key: dependency-check-nvd-${{ runner.os }}-weekly
           restore-keys: |
             dependency-check-nvd-${{ runner.os }}-
 

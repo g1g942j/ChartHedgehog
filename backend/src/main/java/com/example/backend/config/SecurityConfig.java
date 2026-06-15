@@ -15,7 +15,6 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
-import org.springframework.security.web.header.writers.StaticHeadersWriter;
 
 import java.util.List;
 
@@ -29,7 +28,7 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-                .csrf(csrf -> csrf.disable())
+                .csrf(csrf -> csrf.disable()) // Ошибка(SAST)
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**", "/h2-console/**").permitAll()
@@ -66,14 +65,14 @@ public class SecurityConfig {
                 )
                 .headers(headers -> headers
                         .frameOptions(frame -> frame.sameOrigin())
-                        .contentSecurityPolicy(csp -> csp
-                                .policyDirectives("default-src 'self'; frame-ancestors 'none'")
+                        .contentSecurityPolicy(csp -> csp // Решение(2DAST) Решение(3DAST)
+                                .policyDirectives("default-src 'self'; frame-ancestors 'self'")
                         )
                         .addHeaderWriter((request, response) -> {
-                            response.setHeader("Cross-Origin-Opener-Policy", "same-origin");
-                            response.setHeader("Cross-Origin-Embedder-Policy", "require-corp");
-                            response.setHeader("Cross-Origin-Resource-Policy", "same-origin");
-                            response.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+                            response.setHeader("Cross-Origin-Opener-Policy", "same-origin"); // Решение(6DAST)
+                            response.setHeader("Cross-Origin-Embedder-Policy", "require-corp"); // Решение(5DAST)
+                            response.setHeader("Cross-Origin-Resource-Policy", "same-origin"); // Решение(7DAST)
+                            response.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()"); // Решение(8DAST)
                         })
                 );
 
