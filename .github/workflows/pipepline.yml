@@ -18,6 +18,5 @@ jobs:
       NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
 
   dast:
-    needs: [sast, sca]
-    if: always()
+    # needs: [sast, sca]
     uses: ./.github/workflows/dast.yml
