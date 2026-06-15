@@ -55,6 +55,40 @@ semgrep scan `
   chart_hedgehog/src
   ```
 
+## DAST
+
+```bash
+cd backend
+mvn -B package -DskipTests
+java -jar target/*.jar \
+  --spring.datasource.url=jdbc:h2:mem:testdb \
+  --spring.datasource.driver-class-name=org.h2.Driver \
+  --spring.jpa.database-platform=org.hibernate.dialect.H2Dialect
+
+cd chart_hedgehog
+npm run build && npm start
+
+docker run --rm --network=host \
+  -v "$(pwd)/.github/zap:/zap/wrk" \
+  ghcr.io/zaproxy/zaproxy:stable \
+  zap-baseline.py \
+    -t http://localhost:8080 \
+    -c /zap/wrk/zap-rules.tsv \
+    -a -j \
+    -r report_backend.html \
+    -J report_backend.json
+
+docker run --rm --network=host \
+  -v "$(pwd)/.github/zap:/zap/wrk" \
+  ghcr.io/zaproxy/zaproxy:stable \
+  zap-baseline.py \
+    -t http://localhost:3000 \
+    -c /zap/wrk/zap-rules.tsv \
+    -a -j \
+    -r report_frontend.html \
+    -J report_frontend.json
+  ```
+
 ## Dependency Check
 
 ```bash
