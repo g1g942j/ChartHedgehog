@@ -32,3 +32,35 @@ npm run build    # production build
 npm run lint     # линтер
 npm run format   # prettier
 ```
+
+## SAST
+
+```bash
+pip install semgrep
+
+cd C:\Users\matyu\Desktop\ChartHedgehog
+semgrep scan `
+  --config p/java `
+  --config p/secrets `
+  --config p/owasp-top-ten `
+  --config .github/semgrep/backend-rules.yml `
+  backend/src
+
+semgrep scan `
+  --config p/react `
+  --config p/typescript `
+  --config p/secrets `
+  --config p/owasp-top-ten `
+  --config .github/semgrep/frontend-rules.yml `
+  chart_hedgehog/src
+  ```
+
+## Dependency Check
+
+```bash
+cd C:\Users\matyu\Desktop\ChartHedgehog\backend
+mvn dependency-check:check
+
+cd C:\Users\matyu\Desktop\ChartHedgehog\chart_hedgehog
+npm audit
+  ```
