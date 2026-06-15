@@ -42,9 +42,9 @@
     align-items: center;
     justify-content: center;
     min-height: 200px;
+    color: var(--text-secondary);
     border: 2px dashed var(--border);
     border-radius: var(--radius);
-    color: var(--text-secondary);
 }
 
 .List {
@@ -60,17 +60,17 @@
     display: flex;
     flex-direction: column;
     gap: 6px;
+    justify-content: space-between;
     padding: 16px;
+    cursor: default;
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 8px;
-    justify-content: space-between;
     transition: border-color 0.15s, box-shadow 0.15s;
-    cursor: default;
 
     &:hover {
         border-color: var(--primary);
-        box-shadow: 0 2px 12px rgb(0 0 0 / 10%);
+        box-shadow: 0 2px 12px rgb(0 0 0 / 0.1);
     }
 }
 

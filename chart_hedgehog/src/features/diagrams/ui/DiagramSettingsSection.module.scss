@@ -1,0 +1,30 @@
+.Card {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 24px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+}
+
+.SettingsRow {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.Actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+@media (width >= 600px) {
+    .SettingsRow {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        align-items: flex-end;
+    }
+}

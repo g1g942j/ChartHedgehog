@@ -1,0 +1,23 @@
+.Page {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    max-width: 800px;
+    min-height: calc(100vh - 64px);
+    padding: 32px 24px;
+    margin: 0 auto;
+}
+
+.HeaderRow {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: flex-start;
+    justify-content: space-between;
+}
+
+.PageNav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
