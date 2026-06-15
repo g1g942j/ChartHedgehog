@@ -1,0 +1,110 @@
+.Page {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    max-width: 1200px;
+    min-height: calc(100vh - 64px);
+    padding: 32px 24px;
+    margin: 0 auto;
+}
+
+.HeaderRow {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.Card {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 24px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+}
+
+.CreateRow {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.SectionTitle {
+    margin-bottom: 16px;
+}
+
+.EmptyState {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 200px;
+    border: 2px dashed var(--border);
+    border-radius: var(--radius);
+    color: var(--text-secondary);
+}
+
+.List {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+    padding: 0;
+    margin: 0;
+    list-style: none;
+}
+
+.Item {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    justify-content: space-between;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    cursor: default;
+
+    &:hover {
+        border-color: var(--primary);
+        box-shadow: 0 2px 12px rgb(0 0 0 / 10%);
+    }
+}
+
+.ItemMain {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.RoleBadge {
+    padding: 4px 10px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--primary-contrast);
+    background: var(--primary);
+    border-radius: 999px;
+}
+
+.CardActions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+@media (width >= 600px) {
+    .CreateRow {
+        flex-direction: row;
+        align-items: flex-end;
+    }
+
+    .CreateRow > :first-child {
+        flex: 1;
+    }
+}
