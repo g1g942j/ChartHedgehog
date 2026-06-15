@@ -19,4 +19,5 @@ export { useDiagramDetailContext } from './model/useDiagramDetailContext';
 export { useDiagramParticipants } from './model/useDiagramParticipants';
 export { useDiagramsList } from './model/useDiagramsList';
 export { DiagramDetailPage } from './ui/DiagramDetailPage';
+export { DiagramParticipantsPage } from './ui/DiagramParticipantsPage';
 export { DiagramsPage } from './ui/DiagramsPage';

@@ -1,0 +1,76 @@
+.Section {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.Card {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 24px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+}
+
+.AddRow {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.List {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 0;
+    margin: 0;
+    list-style: none;
+}
+
+.Item {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 16px;
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+}
+
+.ItemMain {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: flex-start;
+    justify-content: space-between;
+}
+
+.RoleBadge {
+    padding: 4px 10px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--primary-contrast);
+    background: var(--primary);
+    border-radius: 999px;
+}
+
+.RoleSelect {
+    max-width: 180px;
+}
+
+.RoleActions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+@media (width >= 600px) {
+    .AddRow {
+        display: grid;
+        grid-template-columns: 1fr 180px auto;
+        align-items: flex-end;
+    }
+}
