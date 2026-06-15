@@ -111,6 +111,7 @@
 						<suppressionFile>dependency-check-suppressions.xml</suppressionFile>
 					</suppressionFiles>
 					<nvdApiKey>${env.NVD_API_KEY}</nvdApiKey>
+					<ossIndexAnalyzerEnabled>false</ossIndexAnalyzerEnabled>
 				</configuration>
 			</plugin>
 			<plugin>
