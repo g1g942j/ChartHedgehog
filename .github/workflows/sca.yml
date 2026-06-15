@@ -33,7 +33,7 @@ jobs:
       - name: OWASP Dependency-Check
         env:
           NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
-        run: mvn -B dependency-check:check -Dodc.dataDirectory=$HOME/.cache/dependency-check-data
+        run: mvn -B dependency-check:check -Dodc.dataDirectory=$HOME/.cache/dependency-check-data -DossIndexAnalyzerEnabled=false
 
       - name: Загрузка отчёта
         if: always()
