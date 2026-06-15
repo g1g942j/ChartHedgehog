@@ -1,0 +1,167 @@
+.Placeholder {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    min-height: 240px;
+    padding: 32px 24px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+}
+
+.TemplateRow {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.Toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: flex-end;
+    justify-content: space-between;
+}
+
+.EditorShell {
+    display: grid;
+    grid-template-columns: minmax(140px, 180px) minmax(0, 1fr);
+    gap: 16px;
+    min-height: 560px;
+}
+
+.Palette {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 14px;
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+}
+
+.PaletteItem {
+    padding: 10px 12px;
+    color: var(--text-color);
+    text-align: left;
+    cursor: grab;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+
+    &:disabled {
+        cursor: default;
+        opacity: 0.6;
+    }
+}
+
+.Canvas {
+    position: relative;
+    min-height: 560px;
+    overflow: auto;
+    background:
+        linear-gradient(var(--border) 1px, transparent 1px),
+        linear-gradient(90deg, var(--border) 1px, transparent 1px),
+        var(--bg-soft);
+    background-size: 24px 24px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+}
+
+.CanvasHint {
+    position: absolute;
+    top: 24px;
+    left: 24px;
+    padding: 10px 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+}
+
+.Block {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    min-width: 120px;
+    min-height: 80px;
+    overflow: hidden;
+    background: var(--surface);
+    border: 2px solid var(--primary);
+    border-radius: 10px;
+    box-shadow: var(--shadow);
+}
+
+.BlockHeader {
+    padding: 8px 10px;
+    font-weight: 700;
+    color: var(--primary-contrast);
+    cursor: move;
+    user-select: none;
+    background: var(--primary);
+}
+
+.BlockBody {
+    flex: 1;
+    padding: 10px;
+    margin: 0;
+    overflow: auto;
+    font: 13px/1.4 Consolas, "Courier New", monospace;
+    white-space: pre-wrap;
+}
+
+.Block_interface {
+    border-style: dashed;
+}
+
+.Block_enum {
+    border-color: #8b5cf6;
+
+    .BlockHeader {
+        background: #8b5cf6;
+    }
+}
+
+.Block_actor {
+    border-color: #22c55e;
+
+    .BlockHeader {
+        background: #22c55e;
+    }
+}
+
+.Block_note {
+    border-color: #eab308;
+
+    .BlockHeader {
+        color: #241a11;
+        background: #eab308;
+    }
+}
+
+.ResizeHandle {
+    position: absolute;
+    right: 4px;
+    bottom: 4px;
+    width: 14px;
+    height: 14px;
+    padding: 0;
+    cursor: nwse-resize;
+    background: var(--primary);
+    border: 2px solid var(--surface);
+    border-radius: 4px;
+}
+
+@media (width >= 600px) {
+    .TemplateRow {
+        display: grid;
+        grid-template-columns: minmax(180px, 260px) auto;
+        align-items: flex-end;
+    }
+}
+
+@media (width <= 760px) {
+    .EditorShell {
+        grid-template-columns: 1fr;
+    }
+}
