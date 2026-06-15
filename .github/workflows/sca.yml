@@ -5,6 +5,10 @@ on:
     secrets:
       NVD_API_KEY:
         required: false
+      OSSINDEX_USERNAME:
+        required: false
+      OSSINDEX_TOKEN:
+        required: false
 
 jobs:
   java-sca:
@@ -33,6 +37,8 @@ jobs:
       - name: OWASP Dependency-Check
         env:
           NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+          OSSINDEX_USERNAME: ${{ secrets.OSSINDEX_USERNAME }}
+          OSSINDEX_TOKEN: ${{ secrets.OSSINDEX_TOKEN }}
         run: mvn -B dependency-check:check -Dodc.dataDirectory=$HOME/.cache/dependency-check-data
 
       - name: Загрузка отчёта
