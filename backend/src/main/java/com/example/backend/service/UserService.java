@@ -1,6 +1,7 @@
 package com.example.backend.service;
 
 import com.example.backend.dto.RegisterRequest;
+import com.example.backend.dto.UserSearchResponse;
 import com.example.backend.entity.Role;
 import com.example.backend.entity.User;
 import com.example.backend.repository.UserRepository;
@@ -13,6 +14,9 @@ import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+
+import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 public class UserService implements UserDetailsService {
@@ -103,5 +107,27 @@ public class UserService implements UserDetailsService {
         User user = findById(userId);
         user.setIsActive(false);
         userRepository.save(user);
+    }
+
+    public List<UserSearchResponse> searchUsers(String query, Long currentUserId) {
+        if (query == null || query.trim().length() < 2) {
+            throw new RuntimeException("Search query must be at least 2 characters");
+        }
+
+        List<User> users = userRepository.searchUsers(query.trim(), currentUserId);
+
+
+        List<User> limitedUsers = users.stream()
+                .limit(10)
+                .collect(Collectors.toList());
+
+        return limitedUsers.stream()
+                .map(user -> new UserSearchResponse(
+                        user.getId(),
+                        user.getUsername(),
+                        user.getEmail(),
+                        user.getFullName()
+                ))
+                .collect(Collectors.toList());
     }
 }
