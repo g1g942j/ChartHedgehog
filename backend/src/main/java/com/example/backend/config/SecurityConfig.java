@@ -15,6 +15,7 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import org.springframework.security.web.header.writers.StaticHeadersWriter;
 
 import java.util.List;
 
@@ -64,7 +65,16 @@ public class SecurityConfig {
                         .permitAll()
                 )
                 .headers(headers -> headers
-                        .frameOptions(frame -> frame.disable())
+                        .frameOptions(frame -> frame.sameOrigin())
+                        .contentSecurityPolicy(csp -> csp
+                                .policyDirectives("default-src 'self'; frame-ancestors 'none'")
+                        )
+                        .addHeaderWriter((request, response) -> {
+                            response.setHeader("Cross-Origin-Opener-Policy", "same-origin");
+                            response.setHeader("Cross-Origin-Embedder-Policy", "require-corp");
+                            response.setHeader("Cross-Origin-Resource-Policy", "same-origin");
+                            response.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+                        })
                 );
 
         return http.build();

@@ -8,6 +8,7 @@ export type LoginResponse = {
 };
 
 type CurrentUserResponse = {
+    id: number;
     username: string;
     email: string;
     role: string;
@@ -61,7 +62,7 @@ export async function loginUser(data: {
     const me: CurrentUserResponse = await meResponse.json();
 
     setSessionUser({
-        id: 0,
+        id: me.id,
         username: me.username,
         email: me.email,
         role: me.role,
