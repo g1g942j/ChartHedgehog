@@ -846,3 +846,274 @@
     background: #fefce8;
     border-color: #eab308;
 }
+
+// ── Anchor dots ────────────────────────────────────────────────────────────────
+
+.AnchorDot {
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    background: var(--primary, #1a56db);
+    border: 2px solid #fff;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    transition: transform 0.1s, background 0.1s;
+    cursor: crosshair;
+    z-index: 10;
+
+    &_top    { top: 0;   left: 50%; }
+    &_right  { top: 50%; left: 100%; }
+    &_bottom { top: 100%; left: 50%; }
+    &_left   { top: 50%; left: 0; }
+
+    &_hot {
+        background: #ef4444;
+        transform: translate(-50%, -50%) scale(1.4);
+    }
+}
+
+// ── Properties panel ──────────────────────────────────────────────────────────
+
+.PropertiesPanel {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 200px;
+    min-width: 200px;
+    padding: 12px;
+    overflow-y: auto;
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+}
+
+.PropRow {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.PropLabel {
+    flex-shrink: 0;
+    width: 80px;
+    font-size: 12px;
+    color: var(--text-secondary, #888);
+}
+
+.PropValue {
+    flex-shrink: 0;
+    min-width: 28px;
+    font-size: 12px;
+    color: var(--text-secondary, #888);
+    text-align: right;
+}
+
+.ColorInput {
+    width: 32px;
+    height: 28px;
+    padding: 2px;
+    cursor: pointer;
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+}
+
+// ── Minimap ───────────────────────────────────────────────────────────────────
+
+.Minimap {
+    position: absolute;
+    right: 12px;
+    bottom: 12px;
+    overflow: hidden;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgb(0 0 0 / 0.15);
+    opacity: 0.85;
+    transition: opacity 0.2s;
+    pointer-events: none;
+
+    &:hover { opacity: 1; }
+}
+
+// ── BPMN block styles ─────────────────────────────────────────────────────────
+
+.Block_bpmn-event,
+.Block_bpmn-end {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.Block_bpmn-gateway {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+}
+
+.Block_bpmn-task {
+    background: var(--block-fill, #eff6ff);
+    border: var(--block-stroke-width, 2px) solid var(--block-stroke, #3b82f6);
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.Block_bpmn {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    padding: 0;
+}
+
+.BpmnSvg {
+    display: block;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+}
+
+.BpmnTask {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    padding: 8px;
+    background: var(--block-fill, #eff6ff);
+    border: var(--block-stroke-width, 2px) solid var(--block-stroke, #3b82f6);
+    border-radius: 12px;
+    box-sizing: border-box;
+}
+
+.BpmnTaskLabel {
+    font-size: var(--block-font-size, 13px);
+    font-weight: 500;
+    color: var(--block-stroke, #1e3a8a);
+    text-align: center;
+    word-break: break-word;
+}
+
+// ── ER block styles ───────────────────────────────────────────────────────────
+
+.Block_er-entity {
+    background: var(--block-fill, var(--surface));
+    border: var(--block-stroke-width, 2px) solid var(--block-stroke, var(--primary));
+    border-radius: 0;
+    box-shadow: none;
+    padding: 0;
+    overflow: hidden;
+}
+
+.Block_er-attribute {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--block-fill, var(--surface));
+    border: var(--block-stroke-width, 1.5px) solid var(--block-stroke, var(--primary));
+    border-radius: 50%;
+    box-shadow: none;
+    padding: 0;
+}
+
+.Block_er-relation {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    padding: 0;
+}
+
+.Block_er {
+    background: transparent;
+    box-shadow: none;
+}
+
+.ErEntity {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+}
+
+.ErEntityHeader {
+    padding: 4px 8px;
+    font-size: var(--block-font-size, 13px);
+    font-weight: 700;
+    color: #fff;
+    text-align: center;
+    background: var(--block-stroke, var(--primary));
+}
+
+.ErEntityBody {
+    flex: 1;
+    padding: 4px 8px;
+    margin: 0;
+    overflow: hidden;
+    font-family: Consolas, 'Courier New', monospace;
+    font-size: 11px;
+    line-height: 1.5;
+    color: var(--text-color);
+    white-space: pre-wrap;
+}
+
+.ErAttribute {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    font-size: var(--block-font-size, 12px);
+    color: var(--block-stroke, var(--primary));
+    text-align: center;
+}
+
+// ── BPMN/ER palette items ─────────────────────────────────────────────────────
+
+.PaletteItem_bpmn-task {
+    border-radius: 12px;
+    border-color: #3b82f6;
+    color: #1e3a8a;
+    background: #eff6ff;
+}
+
+.PaletteItem_bpmn-event {
+    border-radius: 50%;
+    border-color: #22c55e;
+    color: #166534;
+}
+
+.PaletteItem_bpmn-end {
+    border-radius: 50%;
+    border-color: #ef4444;
+    border-width: 3px;
+    color: #991b1b;
+}
+
+.PaletteItem_bpmn-gateway {
+    clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+    border-color: #eab308;
+    color: #78350f;
+    background: #fef9c3;
+}
+
+.PaletteItem_er-entity {
+    border-radius: 0;
+    border-color: var(--primary);
+    color: var(--primary);
+}
+
+.PaletteItem_er-attribute {
+    border-radius: 50%;
+    border-color: var(--primary);
+    color: var(--primary);
+}
+
+.PaletteItem_er-relation {
+    clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+    border-color: #7c3aed;
+    color: #7c3aed;
+    background: #f3e8ff;
+}

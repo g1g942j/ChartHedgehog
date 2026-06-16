@@ -4,6 +4,8 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 
 import ContentCopyOutlinedIcon from '@mui/icons-material/ContentCopyOutlined';
+import GridViewOutlinedIcon from '@mui/icons-material/GridViewOutlined';
+import ViewListOutlinedIcon from '@mui/icons-material/ViewListOutlined';
 
 import { AppNavbar } from '@/widgets/AppNavbar';
 import { useLocale } from '@/shared/i18n';
@@ -54,6 +56,10 @@ export function DiagramsPage() {
     const [search, setSearch] = useState('');
     const [sort, setSort] = useState<SortKey>('date-new');
     const [roleFilter, setRoleFilter] = useState<RoleFilter>('all');
+    const [viewMode, setViewMode] = useState<'list' | 'grid'>(() => {
+        if (typeof window !== 'undefined') return (localStorage.getItem('diagrams-view') as 'list' | 'grid') ?? 'list';
+        return 'list';
+    });
 
     const filtered = useMemo(() => {
         let result = diagrams;
@@ -160,6 +166,22 @@ export function DiagramsPage() {
                                 <option value="EDITOR">Редактор</option>
                                 <option value="VIEWER">Зритель</option>
                             </select>
+                            <button
+                                type="button"
+                                className={`${styles.ViewToggle} ${viewMode === 'list' ? styles.ViewToggle_active : ''}`}
+                                title="Список"
+                                onClick={() => { setViewMode('list'); localStorage.setItem('diagrams-view', 'list'); }}
+                            >
+                                <ViewListOutlinedIcon fontSize="small" />
+                            </button>
+                            <button
+                                type="button"
+                                className={`${styles.ViewToggle} ${viewMode === 'grid' ? styles.ViewToggle_active : ''}`}
+                                title="Сетка"
+                                onClick={() => { setViewMode('grid'); localStorage.setItem('diagrams-view', 'grid'); }}
+                            >
+                                <GridViewOutlinedIcon fontSize="small" />
+                            </button>
                         </div>
 
                         {filtered.length === 0 ? (
@@ -168,6 +190,32 @@ export function DiagramsPage() {
                                     Ничего не найдено
                                 </Typography>
                             </div>
+                        ) : viewMode === 'grid' ? (
+                            <ul className={styles.GridList}>
+                                {filtered.map((diagram) => (
+                                    <li key={diagram.id} className={styles.GridItem}>
+                                        <Link href={`/diagrams/${diagram.id}`} className={styles.GridItemPreview} aria-label={diagram.name}>
+                                            <span className={styles.GridItemIcon}>📊</span>
+                                        </Link>
+                                        <div className={styles.GridItemInfo}>
+                                            <span className={styles.GridItemName} title={diagram.name}>{diagram.name}</span>
+                                            <span className={styles.RoleBadge}>{roleLabel(diagram.role, t.roles)}</span>
+                                        </div>
+                                        <div className={styles.CardActions}>
+                                            <Button component={Link} href={`/diagrams/${diagram.id}`} variant="contained" size="small">{t.common.diagram}</Button>
+                                            <Button
+                                                variant="outlined" size="small"
+                                                loading={cloningId === diagram.id}
+                                                disabled={cloningId !== null}
+                                                title="Клонировать"
+                                                onClick={() => void handleClone(diagram.id)}
+                                            >
+                                                <ContentCopyOutlinedIcon fontSize="small" />
+                                            </Button>
+                                        </div>
+                                    </li>
+                                ))}
+                            </ul>
                         ) : (
                             <ul className={styles.List}>
                                 {filtered.map((diagram) => (
@@ -218,6 +266,7 @@ export function DiagramsPage() {
                             </ul>
                         )}
                     </section>
+
                 )}
             </main>
         </>

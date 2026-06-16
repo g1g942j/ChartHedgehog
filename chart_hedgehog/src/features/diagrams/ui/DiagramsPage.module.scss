@@ -141,3 +141,100 @@
         flex: 1;
     }
 }
+
+// ── View toggle ───────────────────────────────────────────────────────────────
+
+.ViewToggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    cursor: pointer;
+    color: var(--text-secondary, #888);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    transition: color 0.15s, border-color 0.15s, background 0.15s;
+    flex-shrink: 0;
+
+    &:hover {
+        color: var(--primary);
+        border-color: var(--primary);
+    }
+
+    &_active {
+        color: var(--primary-contrast);
+        background: var(--primary);
+        border-color: var(--primary);
+
+        &:hover {
+            color: var(--primary-contrast);
+        }
+    }
+}
+
+// ── Grid view ─────────────────────────────────────────────────────────────────
+
+.GridList {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 16px;
+    padding: 0;
+    margin: 0;
+    list-style: none;
+}
+
+.GridItem {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    transition: border-color 0.15s, box-shadow 0.15s;
+
+    &:hover {
+        border-color: var(--primary);
+        box-shadow: 0 2px 12px rgb(0 0 0 / 0.1);
+    }
+}
+
+.GridItemPreview {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 110px;
+    font-size: 48px;
+    text-decoration: none;
+    background: var(--bg-soft);
+    border-bottom: 1px solid var(--border);
+    transition: background 0.15s;
+
+    &:hover {
+        background: color-mix(in srgb, var(--primary) 6%, var(--bg-soft));
+    }
+}
+
+.GridItemIcon {
+    opacity: 0.5;
+}
+
+.GridItemInfo {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px 10px 0;
+}
+
+.GridItemName {
+    overflow: hidden;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    color: var(--text-color);
+}

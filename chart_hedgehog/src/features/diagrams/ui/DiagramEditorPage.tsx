@@ -12,6 +12,7 @@ import DarkModeOutlinedIcon from '@mui/icons-material/DarkModeOutlined';
 import DeleteOutlineOutlinedIcon from '@mui/icons-material/DeleteOutlineOutlined';
 import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
 import GestureOutlinedIcon from '@mui/icons-material/GestureOutlined';
+import GridOnOutlinedIcon from '@mui/icons-material/GridOnOutlined';
 import GroupsOutlinedIcon from '@mui/icons-material/GroupsOutlined';
 import LightModeOutlinedIcon from '@mui/icons-material/LightModeOutlined';
 import MoreVertOutlinedIcon from '@mui/icons-material/MoreVertOutlined';
@@ -21,6 +22,7 @@ import RedoOutlinedIcon from '@mui/icons-material/RedoOutlined';
 import TableChartOutlinedIcon from '@mui/icons-material/TableChartOutlined';
 import TextFieldsOutlinedIcon from '@mui/icons-material/TextFieldsOutlined';
 import TimelineOutlinedIcon from '@mui/icons-material/TimelineOutlined';
+import TuneOutlinedIcon from '@mui/icons-material/TuneOutlined';
 import UndoOutlinedIcon from '@mui/icons-material/UndoOutlined';
 
 import type { DragEvent, PointerEvent as ReactPointerEvent } from 'react';
@@ -38,6 +40,7 @@ import { Typography } from '@/shared/ui/Typography';
 import styles from './DiagramEditorPage.module.scss';
 
 import {
+    BPMN_BLOCK_TEMPLATES,
     DIAGRAM_TEMPLATES,
     type DiagramBlockTemplate,
     type DiagramCanvasBlock,
@@ -45,10 +48,16 @@ import {
     type DiagramElement,
     type DiagramLineElement,
     type DiagramPencilElement,
+    ER_BLOCK_TEMPLATES,
     fetchDiagramEditorState,
+    getAnchorPoint,
+    isBpmnBlockType,
+    isErBlockType,
     isShapeBlockType,
+    type AnchorSide,
     type LineEnding,
     type LineStyle,
+    resolveLineCoords,
     saveDiagramEditorState,
     SHAPE_BLOCK_TEMPLATES,
     TEXT_BLOCK_TEMPLATES,
@@ -59,7 +68,7 @@ import { deleteDiagram, updateDiagramName } from '../api/diagrams';
 // ─── types ────────────────────────────────────────────────────────────────────
 
 type DrawingTool = 'select' | 'pan' | 'eraser' | 'pencil' | 'line';
-type LeftPanel = 'none' | 'shapes' | 'uml' | 'line-config' | 'templates' | 'text-panel';
+type LeftPanel = 'none' | 'shapes' | 'uml' | 'bpmn' | 'er' | 'line-config' | 'templates' | 'text-panel';
 type EditingBlock = { id: string; title: string; body: string };
 type ExportFormat = 'json' | 'svg' | 'png' | 'jpeg' | 'pdf';
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
@@ -73,6 +82,8 @@ const ZOOM_STEP = 0.1;
 const ZOOM_MIN = 0.25;
 const ZOOM_MAX = 3;
 const HISTORY_LIMIT = 50;
+const GRID_SIZE = 20;
+const ANCHOR_HIT_RADIUS = 14;
 
 const LINE_STYLE_OPTIONS: { value: LineStyle; label: string }[] = [
     { value: 'solid', label: 'Сплошная' },
@@ -86,6 +97,8 @@ const ENDING_OPTIONS: { value: LineEnding; label: string }[] = [
     { value: 'open-arrow', label: 'Открытая' },
     { value: 'circle-end', label: 'Круг' },
 ];
+
+const ANCHOR_SIDES: AnchorSide[] = ['top', 'right', 'bottom', 'left'];
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -120,8 +133,13 @@ function mStart(e: LineEnding) {
     if (e === 'open-arrow') return 'url(#ch-open-arrow-start)';
     if (e === 'circle-end') return 'url(#ch-circle-start)';
 }
+function snapV(v: number, snap: boolean): number {
+    return snap ? Math.round(v / GRID_SIZE) * GRID_SIZE : v;
+}
 
-function SvgDefs() {
+// ─── SVG defs ─────────────────────────────────────────────────────────────────
+
+function SvgDefs({ snapToGrid }: { snapToGrid: boolean }) {
     return (
         <defs>
             <marker id="ch-arrow-end" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
@@ -142,6 +160,11 @@ function SvgDefs() {
             <marker id="ch-circle-start" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto-start-reverse">
                 <circle cx="4" cy="4" r="3" fill="var(--text-color)" />
             </marker>
+            {snapToGrid ? (
+                <pattern id="grid-dots" x="0" y="0" width={GRID_SIZE} height={GRID_SIZE} patternUnits="userSpaceOnUse">
+                    <circle cx={GRID_SIZE / 2} cy={GRID_SIZE / 2} r="1" fill="var(--border)" />
+                </pattern>
+            ) : null}
         </defs>
     );
 }
@@ -187,12 +210,11 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
     const elementsRef = useRef<DiagramElement[]>(initialEditorState.blocks);
     const dragSnapshotRef = useRef<DiagramElement[] | null>(null);
 
-    useEffect(() => {
-        elementsRef.current = elements;
-    }, [elements]);
+    useEffect(() => { elementsRef.current = elements; }, [elements]);
 
     // ── selection ─────────────────────────────────────────────────────────────
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
     const [selBox, setSelBox] = useState<SelBox | null>(null);
     const selBoxStartRef = useRef<{ x: number; y: number } | null>(null);
 
@@ -201,15 +223,20 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
 
     // ── drawing state ─────────────────────────────────────────────────────────
     const [tool, setTool] = useState<DrawingTool>('select');
+    const [snapToGrid, setSnapToGrid] = useState(false);
     const [lineStyle, setLineStyle] = useState<LineStyle>('solid');
     const [lineStartEnding, setLineStartEnding] = useState<LineEnding>('none');
     const [lineEndEnding, setLineEndEnding] = useState<LineEnding>('arrow');
     const [activeLineStart, setActiveLineStart] = useState<{ x: number; y: number } | null>(null);
     const [activeLineCurrent, setActiveLineCurrent] = useState<{ x: number; y: number } | null>(null);
+    const lineStartAnchorRef = useRef<{ blockId: string; side: AnchorSide } | null>(null);
     const activePencilRef = useRef<{ id: string; points: [number, number][] } | null>(null);
     const [pencilPreview, setPencilPreview] = useState<[number, number][]>([]);
     const panRef = useRef<{ startX: number; startY: number; scrollLeft: number; scrollTop: number } | null>(null);
     const [isPanning, setIsPanning] = useState(false);
+
+    // ── anchor hover ──────────────────────────────────────────────────────────
+    const [anchorHover, setAnchorHover] = useState<{ blockId: string; side: AnchorSide } | null>(null);
 
     // ── UI panels ─────────────────────────────────────────────────────────────
     const [leftPanel, setLeftPanel] = useState<LeftPanel>('none');
@@ -218,6 +245,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
     const [isExporting, setIsExporting] = useState(false);
     const [transparentBg, setTransparentBg] = useState(false);
     const [shapeSearch, setShapeSearch] = useState('');
+    const [showProps, setShowProps] = useState(false);
 
     // ── settings form ─────────────────────────────────────────────────────────
     const [renaming, setRenaming] = useState(diagramName);
@@ -234,6 +262,13 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
         });
     };
 
+    // ── block map (for connector resolution) ─────────────────────────────────
+    const blockMap = useMemo(() => {
+        const m = new Map<string, DiagramCanvasBlock>();
+        elements.filter(isBlock).forEach((b) => m.set(b.id, b));
+        return m;
+    }, [elements]);
+
     // ── history helpers ───────────────────────────────────────────────────────
     const pushHistory = useCallback(() => {
         historyRef.current = [...historyRef.current.slice(-(HISTORY_LIMIT - 1)), elementsRef.current];
@@ -247,6 +282,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
         historyRef.current = past.slice(0, -1);
         setElements(past[past.length - 1]!);
         setSelectedIds(new Set());
+        setSelectedLineId(null);
     }, []);
 
     const redo = useCallback(() => {
@@ -256,6 +292,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
         futureRef.current = future.slice(1);
         setElements(future[0]!);
         setSelectedIds(new Set());
+        setSelectedLineId(null);
     }, []);
 
     const copySelected = useCallback(() => {
@@ -269,51 +306,40 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
         pushHistory();
         const OFFSET = 20;
         const newBlocks: DiagramCanvasBlock[] = clipboardRef.current.map((b) => ({
-            ...b,
-            id: generateId(b.type),
-            x: b.x + OFFSET,
-            y: b.y + OFFSET,
+            ...b, id: generateId(b.type), x: b.x + OFFSET, y: b.y + OFFSET,
         }));
         setElements((cur) => [...cur, ...newBlocks]);
         setSelectedIds(new Set(newBlocks.map((b) => b.id)));
     }, [canEdit, pushHistory]);
 
     const deleteSelected = useCallback(() => {
-        if (!selectedIds.size || !canEdit) return;
-        pushHistory();
-        setElements((cur) => cur.filter((el) => !selectedIds.has((el as { id?: string }).id ?? '')));
-        setSelectedIds(new Set());
-    }, [canEdit, pushHistory, selectedIds]);
+        if (!canEdit) return;
+        if (selectedIds.size > 0) {
+            pushHistory();
+            setElements((cur) => cur.filter((el) => !selectedIds.has((el as { id?: string }).id ?? '')));
+            setSelectedIds(new Set());
+        } else if (selectedLineId) {
+            pushHistory();
+            setElements((cur) => cur.filter((el) => (el as { id?: string }).id !== selectedLineId));
+            setSelectedLineId(null);
+        }
+    }, [canEdit, pushHistory, selectedIds, selectedLineId]);
 
     // ── keyboard shortcuts ────────────────────────────────────────────────────
     const keyActionsRef = useRef({ undo, redo, copySelected, paste, deleteSelected });
-    useEffect(() => {
-        keyActionsRef.current = { undo, redo, copySelected, paste, deleteSelected };
-    });
+    useEffect(() => { keyActionsRef.current = { undo, redo, copySelected, paste, deleteSelected }; });
 
     useEffect(() => {
         const onKey = (e: KeyboardEvent) => {
             const target = e.target as HTMLElement;
             if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
             const a = keyActionsRef.current;
-            if (e.ctrlKey && !e.shiftKey && e.key === 'z') {
-                e.preventDefault();
-                a.undo();
-            } else if (e.ctrlKey && (e.key === 'y' || (e.shiftKey && e.key === 'Z'))) {
-                e.preventDefault();
-                a.redo();
-            } else if (e.ctrlKey && e.key === 'c') {
-                a.copySelected();
-            } else if (e.ctrlKey && e.key === 'v') {
-                e.preventDefault();
-                a.paste();
-            } else if ((e.key === 'Delete' || e.key === 'Backspace') && !e.ctrlKey) {
-                e.preventDefault();
-                a.deleteSelected();
-            } else if (e.key === 'Escape') {
-                setSelectedIds(new Set());
-                setEditing(null);
-            }
+            if (e.ctrlKey && !e.shiftKey && e.key === 'z') { e.preventDefault(); a.undo(); }
+            else if (e.ctrlKey && (e.key === 'y' || (e.shiftKey && e.key === 'Z'))) { e.preventDefault(); a.redo(); }
+            else if (e.ctrlKey && e.key === 'c') { a.copySelected(); }
+            else if (e.ctrlKey && e.key === 'v') { e.preventDefault(); a.paste(); }
+            else if ((e.key === 'Delete' || e.key === 'Backspace') && !e.ctrlKey) { e.preventDefault(); a.deleteSelected(); }
+            else if (e.key === 'Escape') { setSelectedIds(new Set()); setSelectedLineId(null); setEditing(null); }
         };
         document.addEventListener('keydown', onKey);
         return () => document.removeEventListener('keydown', onKey);
@@ -326,9 +352,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
             await saveDiagramEditorState(diagramId, { template, blocks: els });
             setSaveStatus('saved');
             setTimeout(() => setSaveStatus('idle'), 2000);
-        } catch {
-            setSaveStatus('error');
-        }
+        } catch { setSaveStatus('error'); }
     }, [diagramId, template]);
 
     useEffect(() => {
@@ -377,10 +401,21 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
         const el = canvasRef.current;
         if (!el) return { x: 0, y: 0 };
         const r = el.getBoundingClientRect();
-        return {
-            x: (clientX - r.left - panX) / zoom,
-            y: (clientY - r.top - panY) / zoom,
-        };
+        return { x: (clientX - r.left - panX) / zoom, y: (clientY - r.top - panY) / zoom };
+    };
+
+    // ── nearest anchor detection ──────────────────────────────────────────────
+    const findNearestAnchor = (pt: { x: number; y: number }): { blockId: string; side: AnchorSide } | null => {
+        let best: { blockId: string; side: AnchorSide } | null = null;
+        let bestDist = ANCHOR_HIT_RADIUS;
+        for (const [id, block] of blockMap) {
+            for (const side of ANCHOR_SIDES) {
+                const ap = getAnchorPoint(block, side);
+                const d = Math.hypot(pt.x - ap.x, pt.y - ap.y);
+                if (d < bestDist) { bestDist = d; best = { blockId: id, side }; }
+            }
+        }
+        return best;
     };
 
     // ── canvas pointer events ─────────────────────────────────────────────────
@@ -395,8 +430,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
         }
 
         if (tool === 'select') {
-            setSelectedIds(new Set());
-            setEditing(null);
+            setSelectedIds(new Set()); setSelectedLineId(null); setEditing(null);
             const pt = getCanvasPoint(e.clientX, e.clientY);
             selBoxStartRef.current = pt;
             setSelBox({ x1: pt.x, y1: pt.y, x2: pt.x, y2: pt.y });
@@ -408,8 +442,19 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
         const pt = getCanvasPoint(e.clientX, e.clientY);
 
         if (tool === 'line') {
-            setActiveLineStart(pt);
-            setActiveLineCurrent(pt);
+            // check if clicking an anchor
+            const nearAnchor = findNearestAnchor(pt);
+            if (nearAnchor) {
+                const block = blockMap.get(nearAnchor.blockId)!;
+                const ap = getAnchorPoint(block, nearAnchor.side);
+                lineStartAnchorRef.current = nearAnchor;
+                setActiveLineStart(ap);
+                setActiveLineCurrent(ap);
+            } else {
+                lineStartAnchorRef.current = null;
+                setActiveLineStart(pt);
+                setActiveLineCurrent(pt);
+            }
             e.currentTarget.setPointerCapture(e.pointerId);
         } else if (tool === 'pencil') {
             const id = generateId('pencil');
@@ -426,18 +471,25 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
             setPanY(panRef.current.scrollTop + (e.clientY - panRef.current.startY));
             return;
         }
-
         if (tool === 'select' && selBoxStartRef.current) {
             const pt = getCanvasPoint(e.clientX, e.clientY);
             setSelBox({ x1: selBoxStartRef.current.x, y1: selBoxStartRef.current.y, x2: pt.x, y2: pt.y });
             return;
         }
-
         if (!canEdit) return;
         const pt = getCanvasPoint(e.clientX, e.clientY);
-
         if (tool === 'line' && activeLineStart) {
-            setActiveLineCurrent(pt);
+            // snap to nearest anchor for preview
+            const near = findNearestAnchor(pt);
+            if (near) {
+                const block = blockMap.get(near.blockId)!;
+                const ap = getAnchorPoint(block, near.side);
+                setActiveLineCurrent(ap);
+                setAnchorHover(near);
+            } else {
+                setActiveLineCurrent(pt);
+                setAnchorHover(null);
+            }
         } else if (tool === 'pencil' && activePencilRef.current) {
             activePencilRef.current.points.push([pt.x, pt.y]);
             setPencilPreview([...activePencilRef.current.points]);
@@ -445,54 +497,49 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
     };
 
     const onCanvasPointerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
-        if (tool === 'pan') {
-            panRef.current = null;
-            setIsPanning(false);
-            return;
-        }
-
+        if (tool === 'pan') { panRef.current = null; setIsPanning(false); return; }
         if (tool === 'select') {
             if (selBox) {
-                const minX = Math.min(selBox.x1, selBox.x2);
-                const maxX = Math.max(selBox.x1, selBox.x2);
-                const minY = Math.min(selBox.y1, selBox.y2);
-                const maxY = Math.max(selBox.y1, selBox.y2);
-                const SIZE_THRESHOLD = 6;
-                if (maxX - minX > SIZE_THRESHOLD || maxY - minY > SIZE_THRESHOLD) {
-                    const inBox = elements
-                        .filter(isBlock)
-                        .filter((b) => b.x < maxX && b.x + b.width > minX && b.y < maxY && b.y + b.height > minY);
+                const minX = Math.min(selBox.x1, selBox.x2), maxX = Math.max(selBox.x1, selBox.x2);
+                const minY = Math.min(selBox.y1, selBox.y2), maxY = Math.max(selBox.y1, selBox.y2);
+                if (maxX - minX > 6 || maxY - minY > 6) {
+                    const inBox = elements.filter(isBlock).filter(
+                        (b) => b.x < maxX && b.x + b.width > minX && b.y < maxY && b.y + b.height > minY,
+                    );
                     setSelectedIds(new Set(inBox.map((b) => b.id)));
                 }
-                setSelBox(null);
-                selBoxStartRef.current = null;
+                setSelBox(null); selBoxStartRef.current = null;
             }
             return;
         }
-
         if (!canEdit) return;
         const pt = getCanvasPoint(e.clientX, e.clientY);
 
         if (tool === 'line' && activeLineStart) {
             if (Math.hypot(pt.x - activeLineStart.x, pt.y - activeLineStart.y) > 8) {
                 pushHistory();
+                // find if endpoint is on an anchor
+                const endAnchor = anchorHover ?? findNearestAnchor(pt);
+                let x2 = pt.x, y2 = pt.y;
+                if (endAnchor) { const b = blockMap.get(endAnchor.blockId)!; const ap = getAnchorPoint(b, endAnchor.side); x2 = ap.x; y2 = ap.y; }
                 const line: DiagramLineElement = {
-                    id: generateId('line'),
-                    kind: 'line', x1: activeLineStart.x, y1: activeLineStart.y, x2: pt.x, y2: pt.y,
+                    id: generateId('line'), kind: 'line',
+                    x1: activeLineStart.x, y1: activeLineStart.y, x2, y2,
                     style: lineStyle, startEnding: lineStartEnding, endEnding: lineEndEnding,
+                    ...(lineStartAnchorRef.current ? { fromBlockId: lineStartAnchorRef.current.blockId, fromAnchor: lineStartAnchorRef.current.side } : {}),
+                    ...(endAnchor ? { toBlockId: endAnchor.blockId, toAnchor: endAnchor.side } : {}),
                 };
                 setElements((cur) => [...cur, line]);
             }
-            setActiveLineStart(null);
-            setActiveLineCurrent(null);
+            setActiveLineStart(null); setActiveLineCurrent(null);
+            lineStartAnchorRef.current = null; setAnchorHover(null);
         } else if (tool === 'pencil' && activePencilRef.current) {
             const { id, points } = activePencilRef.current;
             if (points.length > 2) {
                 pushHistory();
                 setElements((cur) => [...cur, { id, kind: 'pencil', points } as DiagramPencilElement]);
             }
-            activePencilRef.current = null;
-            setPencilPreview([]);
+            activePencilRef.current = null; setPencilPreview([]);
         }
     };
 
@@ -500,7 +547,10 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
     const updateEl = (id: string, patch: Partial<DiagramCanvasBlock>) =>
         setElements((cur) => cur.map((el) => (isBlock(el) && el.id === id ? { ...el, ...patch } : el)));
 
-    const removeEl = (id: string) => setElements((cur) => cur.filter((el) => el.id !== id));
+    const updateLine = (id: string, patch: Partial<DiagramLineElement>) =>
+        setElements((cur) => cur.map((el) => (isLine(el) && el.id === id ? { ...el, ...patch } : el)));
+
+    const removeEl = (id: string) => setElements((cur) => cur.filter((el) => (el as { id?: string }).id !== id));
 
     const createBlock = (tpl: DiagramBlockTemplate, id: string, x = 100, y = 100): DiagramCanvasBlock => ({
         id, type: tpl.type, title: tpl.title, body: tpl.body, x, y, width: tpl.width, height: tpl.height,
@@ -509,10 +559,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
     const addBlock = (tpl: DiagramBlockTemplate) => {
         pushHistory();
         const id = generateId(tpl.type);
-        setElements((cur) => [
-            ...cur,
-            createBlock(tpl, id, 100 + cur.filter(isBlock).length * 20, 100),
-        ]);
+        setElements((cur) => [...cur, createBlock(tpl, id, 100 + cur.filter(isBlock).length * 20, 100)]);
     };
 
     // ── editing ───────────────────────────────────────────────────────────────
@@ -535,7 +582,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
         e.preventDefault();
         if (!canEdit) return;
         const blockType = e.dataTransfer.getData('application/chart-hedgehog-block');
-        const tpl = [...UML_BLOCK_TEMPLATES, ...SHAPE_BLOCK_TEMPLATES, ...TEXT_BLOCK_TEMPLATES].find((t) => t.type === blockType);
+        const tpl = [...UML_BLOCK_TEMPLATES, ...SHAPE_BLOCK_TEMPLATES, ...TEXT_BLOCK_TEMPLATES, ...BPMN_BLOCK_TEMPLATES, ...ER_BLOCK_TEMPLATES].find((t) => t.type === blockType);
         if (!tpl) return;
         const pt = getCanvasPoint(e.clientX, e.clientY);
         const id = generateId(tpl.type);
@@ -546,39 +593,22 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
     // ── block pointer events ──────────────────────────────────────────────────
     const onBlockPointerDown = (e: ReactPointerEvent<HTMLDivElement>, block: DiagramCanvasBlock) => {
         if (tool === 'pan') return;
-        if (tool === 'eraser') {
-            pushHistory();
-            removeEl(block.id);
-            return;
-        }
+        if (tool === 'eraser') { pushHistory(); removeEl(block.id); return; }
         if (!canEdit || editing?.id === block.id) return;
-        if (tool !== 'select') return;
+        if (tool === 'line') return; // handled via anchor dots
 
-        // Shift+click: toggle selection
+        const moveIds: Set<string> = selectedIds.has(block.id) ? new Set(selectedIds) : new Set([block.id]);
         if (e.shiftKey) {
-            setSelectedIds((prev) => {
-                const next = new Set(prev);
-                if (next.has(block.id)) next.delete(block.id);
-                else next.add(block.id);
-                return next;
-            });
+            setSelectedIds((prev) => { const n = new Set(prev); n.has(block.id) ? n.delete(block.id) : n.add(block.id); return n; });
             return;
         }
-
-        // Compute which IDs will move
-        const moveIds: Set<string> = selectedIds.has(block.id) ? new Set(selectedIds) : new Set([block.id]);
         if (!selectedIds.has(block.id)) setSelectedIds(moveIds);
+        setSelectedLineId(null);
 
         e.currentTarget.setPointerCapture(e.pointerId);
-
-        // Snapshot positions for group move
         const startPositions = new Map<string, { x: number; y: number }>(
-            elementsRef.current
-                .filter(isBlock)
-                .filter((b) => moveIds.has(b.id))
-                .map((b) => [b.id, { x: b.x, y: b.y }]),
+            elementsRef.current.filter(isBlock).filter((b) => moveIds.has(b.id)).map((b) => [b.id, { x: b.x, y: b.y }]),
         );
-
         const sx = e.clientX, sy = e.clientY;
         dragSnapshotRef.current = [...elementsRef.current];
         let moved = false;
@@ -586,18 +616,15 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
 
         const move = (me: PointerEvent) => {
             moved = true;
-            const dx = (me.clientX - sx) / currentZoom;
-            const dy = (me.clientY - sy) / currentZoom;
-            setElements((cur) =>
-                cur.map((el) => {
-                    if (!isBlock(el) || !moveIds.has(el.id)) return el;
-                    const start = startPositions.get(el.id);
-                    if (!start) return el;
-                    return { ...el, x: start.x + dx, y: start.y + dy };
-                }),
-            );
+            const dx = snapV((me.clientX - sx) / currentZoom, snapToGrid);
+            const dy = snapV((me.clientY - sy) / currentZoom, snapToGrid);
+            setElements((cur) => cur.map((el) => {
+                if (!isBlock(el) || !moveIds.has(el.id)) return el;
+                const start = startPositions.get(el.id);
+                if (!start) return el;
+                return { ...el, x: snapV(start.x + dx, snapToGrid), y: snapV(start.y + dy, snapToGrid) };
+            }));
         };
-
         const up = () => {
             if (moved && dragSnapshotRef.current) {
                 historyRef.current = [...historyRef.current.slice(-(HISTORY_LIMIT - 1)), dragSnapshotRef.current];
@@ -607,7 +634,6 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
             window.removeEventListener('pointermove', move);
             window.removeEventListener('pointerup', up);
         };
-
         window.addEventListener('pointermove', move);
         window.addEventListener('pointerup', up);
     };
@@ -619,23 +645,30 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
         const sx = e.clientX, sy = e.clientY, sw = block.width, sh = block.height;
         dragSnapshotRef.current = [...elementsRef.current];
         const currentZoom = zoom;
-
         const move = (me: PointerEvent) => updateEl(block.id, {
-            width: Math.max(80, sw + (me.clientX - sx) / currentZoom),
-            height: Math.max(60, sh + (me.clientY - sy) / currentZoom),
+            width: Math.max(80, snapV(sw + (me.clientX - sx) / currentZoom, snapToGrid)),
+            height: Math.max(60, snapV(sh + (me.clientY - sy) / currentZoom, snapToGrid)),
         });
         const up = () => {
-            if (dragSnapshotRef.current) {
-                historyRef.current = [...historyRef.current.slice(-(HISTORY_LIMIT - 1)), dragSnapshotRef.current];
-                futureRef.current = [];
-                dragSnapshotRef.current = null;
-            }
+            if (dragSnapshotRef.current) { historyRef.current = [...historyRef.current.slice(-(HISTORY_LIMIT - 1)), dragSnapshotRef.current]; futureRef.current = []; dragSnapshotRef.current = null; }
             window.removeEventListener('pointermove', move);
             window.removeEventListener('pointerup', up);
         };
         window.addEventListener('pointermove', move);
         window.addEventListener('pointerup', up);
     };
+
+    // ── selected element for properties ──────────────────────────────────────
+    const selectedBlock = useMemo(() => {
+        if (selectedIds.size !== 1) return null;
+        const [id] = selectedIds;
+        return blockMap.get(id!) ?? null;
+    }, [selectedIds, blockMap]);
+
+    const selectedLine = useMemo(() => {
+        if (!selectedLineId) return null;
+        return elements.find((el) => isLine(el) && el.id === selectedLineId) as DiagramLineElement | undefined ?? null;
+    }, [selectedLineId, elements]);
 
     // ── export ────────────────────────────────────────────────────────────────
     const downloadBlob = (blob: Blob, filename: string) => {
@@ -651,11 +684,60 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
         for (const el of elements) {
             if (isBlock(el)) { minX = Math.min(minX, el.x); minY = Math.min(minY, el.y); maxX = Math.max(maxX, el.x + el.width); maxY = Math.max(maxY, el.y + el.height); }
-            else if (isLine(el)) { minX = Math.min(minX, el.x1, el.x2); minY = Math.min(minY, el.y1, el.y2); maxX = Math.max(maxX, el.x1, el.x2); maxY = Math.max(maxY, el.y1, el.y2); }
+            else if (isLine(el)) { const c = resolveLineCoords(el, blockMap); minX = Math.min(minX, c.x1, c.x2); minY = Math.min(minY, c.y1, c.y2); maxX = Math.max(maxX, c.x1, c.x2); maxY = Math.max(maxY, c.y1, c.y2); }
             else if (isPencil(el)) { for (const [px, py] of el.points) { minX = Math.min(minX, px); minY = Math.min(minY, py); maxX = Math.max(maxX, px); maxY = Math.max(maxY, py); } }
         }
         if (!isFinite(minX)) return null;
         return { x: Math.max(0, minX - PAD), y: Math.max(0, minY - PAD), width: maxX - minX + PAD * 2, height: maxY - minY + PAD * 2 };
+    };
+
+    const buildSvg = (transparent = false): string => {
+        const PAD = 24;
+        const bounds = getContentBounds();
+        const vx = bounds?.x ?? 0, vy = bounds?.y ?? 0;
+        const vw = bounds?.width ?? 800, vh = bounds?.height ?? 600;
+        const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        const defs = `<defs><marker id="e-arrow" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#000"/></marker><marker id="e-open" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><polyline points="0,1 9,4 0,7" fill="none" stroke="#000" stroke-width="1.5"/></marker><marker id="e-circle" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto"><circle cx="4" cy="4" r="3" fill="#000"/></marker><marker id="s-arrow" markerWidth="10" markerHeight="7" refX="1" refY="3.5" orient="auto-start-reverse"><polygon points="0 0,10 3.5,0 7" fill="#000"/></marker><marker id="s-open" markerWidth="10" markerHeight="8" refX="1" refY="4" orient="auto-start-reverse"><polyline points="0,1 9,4 0,7" fill="none" stroke="#000" stroke-width="1.5"/></marker><marker id="s-circle" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto-start-reverse"><circle cx="4" cy="4" r="3" fill="#000"/></marker></defs>`;
+        const em = (e: LineEnding, p: string) => e === 'arrow' ? `url(#${p}-arrow)` : e === 'open-arrow' ? `url(#${p}-open)` : e === 'circle-end' ? `url(#${p}-circle)` : '';
+        const sd = (s: LineStyle) => s === 'dashed' ? 'stroke-dasharray="10,5"' : s === 'dotted' ? 'stroke-dasharray="3,5"' : '';
+        const svgLines = elements.filter(isLine).map((l) => {
+            const c = resolveLineCoords(l, blockMap);
+            const stroke = l.strokeColor ?? '#000';
+            const sw = l.strokeWidth ?? 2;
+            return `<line x1="${c.x1}" y1="${c.y1}" x2="${c.x2}" y2="${c.y2}" stroke="${stroke}" stroke-width="${sw}" ${sd(l.style)} ${em(l.endEnding,'e') ? `marker-end="${em(l.endEnding,'e')}"`:''} ${em(l.startEnding,'s') ? `marker-start="${em(l.startEnding,'s')}"`:''} />`;
+        }).join('\n');
+        const svgPencil = elements.filter(isPencil).map((p) => `<path d="${pointsToPath(p.points)}" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`).join('\n');
+        const svgBlocks = elements.filter(isBlock).map((b) => {
+            const x = b.x, y = b.y, w = b.width, h = b.height;
+            const sc = b.strokeColor ?? '#1a56db', fc = b.fillColor;
+            if (b.type === 'text') return `<text x="${x+w/2}" y="${y+h/2}" text-anchor="middle" dominant-baseline="middle" font-size="${b.fontSize??14}" fill="${sc}">${esc(b.title)}</text>`;
+            if (b.type === 'comment') return `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${fc??'#fefce8'}" stroke="#eab308" stroke-width="1.5" rx="8"/><text x="${x+w/2}" y="${y+h/2}" text-anchor="middle" dominant-baseline="middle" font-size="13" fill="#78350f">${esc(b.title)}</text>`;
+            if (b.type === 'bpmn-task') return `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${fc??'#eff6ff'}" stroke="${sc??'#3b82f6'}" stroke-width="2" rx="12"/><text x="${x+w/2}" y="${y+h/2}" text-anchor="middle" dominant-baseline="middle" font-size="13" fill="#1e3a8a">${esc(b.title)}</text>`;
+            if (b.type === 'bpmn-event') return `<circle cx="${x+w/2}" cy="${y+h/2}" r="${Math.min(w,h)/2-2}" fill="${fc??'#fff'}" stroke="${sc??'#22c55e'}" stroke-width="2"/>`;
+            if (b.type === 'bpmn-end') return `<circle cx="${x+w/2}" cy="${y+h/2}" r="${Math.min(w,h)/2-2}" fill="${fc??'#fff'}" stroke="${sc??'#ef4444'}" stroke-width="4"/>`;
+            if (b.type === 'bpmn-gateway') return `<polygon points="${x+w/2},${y+2} ${x+w-2},${y+h/2} ${x+w/2},${y+h-2} ${x+2},${y+h/2}" fill="${fc??'#fef9c3'}" stroke="${sc??'#eab308'}" stroke-width="2"/>`;
+            if (b.type === 'er-entity') return `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${fc??'#fff'}" stroke="${sc??'#1a56db'}" stroke-width="2"/><rect x="${x}" y="${y}" width="${w}" height="28" fill="${sc??'#1a56db'}"/><text x="${x+w/2}" y="${y+14}" text-anchor="middle" dominant-baseline="middle" font-size="13" font-weight="700" fill="#fff">${esc(b.title)}</text><text x="${x+8}" y="${y+42}" font-size="11" fill="#000" font-family="Consolas,monospace">${esc(b.body)}</text>`;
+            if (b.type === 'er-attribute') return `<ellipse cx="${x+w/2}" cy="${y+h/2}" rx="${w/2-2}" ry="${h/2-2}" fill="${fc??'#fff'}" stroke="${sc??'#1a56db'}" stroke-width="1.5"/><text x="${x+w/2}" y="${y+h/2}" text-anchor="middle" dominant-baseline="middle" font-size="12" fill="#000">${esc(b.title)}</text>`;
+            if (b.type === 'er-relation') return `<polygon points="${x+w/2},${y+2} ${x+w-2},${y+h/2} ${x+w/2},${y+h-2} ${x+2},${y+h/2}" fill="${fc??'#fff'}" stroke="${sc??'#7c3aed'}" stroke-width="2"/><text x="${x+w/2}" y="${y+h/2}" text-anchor="middle" dominant-baseline="middle" font-size="12" fill="#000">${esc(b.title)}</text>`;
+            if (isShapeBlockType(b.type)) {
+                const shapeColors: Record<string, string> = { rectangle: '#3b82f6', circle: '#ec4899', diamond: '#f59e0b', triangle: '#22c55e', sticky: '#eab308' };
+                const color = sc ?? shapeColors[b.type] ?? '#3b82f6';
+                let shapeEl = '';
+                if (b.type === 'rectangle') shapeEl = `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${fc??'rgba(59,130,246,0.07)'}" stroke="${color}" stroke-width="2.5" rx="6"/>`;
+                else if (b.type === 'circle') shapeEl = `<ellipse cx="${x+w/2}" cy="${y+h/2}" rx="${w/2}" ry="${h/2}" fill="${fc??'rgba(236,72,153,0.07)'}" stroke="${color}" stroke-width="2.5"/>`;
+                else if (b.type === 'diamond') shapeEl = `<polygon points="${x+w/2},${y+PAD/2} ${x+w-PAD/2},${y+h/2} ${x+w/2},${y+h-PAD/2} ${x+PAD/2},${y+h/2}" fill="${fc??'none'}" stroke="${color}" stroke-width="2.5"/>`;
+                else if (b.type === 'triangle') shapeEl = `<polygon points="${x+w/2},${y+PAD/2} ${x+w-PAD/2},${y+h-PAD/2} ${x+PAD/2},${y+h-PAD/2}" fill="${fc??'none'}" stroke="${color}" stroke-width="2.5"/>`;
+                else if (b.type === 'sticky') shapeEl = `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${fc??'#fef9c3'}" stroke="${color}" stroke-width="2" rx="4"/>`;
+                return `${shapeEl}\n<text x="${x+w/2}" y="${y+h/2}" text-anchor="middle" dominant-baseline="middle" font-size="${b.fontSize??13}" font-weight="600" fill="${color}">${esc(b.title)}</text>`;
+            }
+            return `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${fc??'#fff'}" stroke="${sc??'#1a56db'}" stroke-width="2" rx="10"/>
+<rect x="${x}" y="${y}" width="${w}" height="32" fill="${sc??'#1a56db'}" rx="10"/>
+<rect x="${x}" y="${y+22}" width="${w}" height="10" fill="${sc??'#1a56db'}"/>
+<text x="${x+w/2}" y="${y+16}" text-anchor="middle" dominant-baseline="middle" font-size="13" font-weight="700" fill="#fff">${esc(b.title)}</text>
+<text x="${x+10}" y="${y+48}" font-size="12" fill="#000" font-family="Consolas,monospace">${esc(b.body)}</text>`;
+        }).join('\n');
+        const bgRect = transparent ? '' : `<rect x="${vx}" y="${vy}" width="${vw}" height="${vh}" fill="#ffffff"/>`;
+        return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vx} ${vy} ${vw} ${vh}" width="${vw}" height="${vh}">\n${defs}\n${bgRect}\n${svgLines}\n${svgPencil}\n${svgBlocks}\n</svg>`;
     };
 
     const captureCanvas = async (transparent = false) => {
@@ -668,62 +750,14 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
         const bounds = getContentBounds();
         const canvas = await html2canvas(el, {
             scale: 2, backgroundColor: transparent ? null : '#ffffff', useCORS: true, logging: false,
-            onclone: (doc, cloned) => {
+            onclone: (doc) => {
                 const vars: Record<string, string> = { '--text-color': '#000000', '--primary': '#1a56db', '--primary-contrast': '#ffffff', '--surface': '#ffffff', '--bg-soft': '#f8f8f8', '--border': '#d0d0d0', '--text-secondary': '#555555' };
                 Object.entries(vars).forEach(([k, v]) => doc.documentElement.style.setProperty(k, v));
-                cloned.querySelectorAll<HTMLElement>('[class*="ResizeHandle"]').forEach((el) => { el.style.display = 'none'; });
-                const drawingSvg = cloned.querySelector<SVGSVGElement>('[class*="CanvasSvg"]');
-                if (drawingSvg) {
-                    drawingSvg.querySelectorAll<SVGElement>(':scope > line, :scope > path').forEach((el) => { el.style.stroke = '#000000'; el.style.strokeWidth = '2px'; });
-                    drawingSvg.querySelectorAll<SVGElement>('marker polygon').forEach((el) => { el.style.fill = '#000000'; el.style.stroke = 'none'; });
-                    drawingSvg.querySelectorAll<SVGElement>('marker polyline').forEach((el) => { el.style.fill = 'none'; el.style.stroke = '#000000'; el.style.strokeWidth = '1.5px'; });
-                    drawingSvg.querySelectorAll<SVGElement>('marker circle').forEach((el) => { el.style.fill = '#000000'; });
-                }
             },
             ...(bounds ?? {}),
         });
         setZoom(savedZoom); setPanX(savedPanX); setPanY(savedPanY);
         return canvas;
-    };
-
-    const buildSvg = (transparent = false): string => {
-        const PAD = 24;
-        const bounds = getContentBounds();
-        const vx = bounds ? bounds.x : 0, vy = bounds ? bounds.y : 0;
-        const vw = bounds ? bounds.width : 800, vh = bounds ? bounds.height : 600;
-        const escXml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-        const defs = `<defs><marker id="e-arrow" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#000"/></marker><marker id="e-open" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><polyline points="0,1 9,4 0,7" fill="none" stroke="#000" stroke-width="1.5"/></marker><marker id="e-circle" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto"><circle cx="4" cy="4" r="3" fill="#000"/></marker><marker id="s-arrow" markerWidth="10" markerHeight="7" refX="1" refY="3.5" orient="auto-start-reverse"><polygon points="0 0,10 3.5,0 7" fill="#000"/></marker><marker id="s-open" markerWidth="10" markerHeight="8" refX="1" refY="4" orient="auto-start-reverse"><polyline points="0,1 9,4 0,7" fill="none" stroke="#000" stroke-width="1.5"/></marker><marker id="s-circle" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto-start-reverse"><circle cx="4" cy="4" r="3" fill="#000"/></marker></defs>`;
-        const endMarker = (e: LineEnding, prefix: 'e' | 's') => e === 'arrow' ? `url(#${prefix}-arrow)` : e === 'open-arrow' ? `url(#${prefix}-open)` : e === 'circle-end' ? `url(#${prefix}-circle)` : '';
-        const strokeDash = (s: LineStyle) => s === 'dashed' ? 'stroke-dasharray="10,5"' : s === 'dotted' ? 'stroke-dasharray="3,5"' : '';
-        const svgLines = elements.filter(isLine).map((l) => {
-            const me = endMarker(l.endEnding, 'e'), ms = endMarker(l.startEnding, 's');
-            return `<line x1="${l.x1}" y1="${l.y1}" x2="${l.x2}" y2="${l.y2}" stroke="#000" stroke-width="2" ${strokeDash(l.style)} ${me ? `marker-end="${me}"` : ''} ${ms ? `marker-start="${ms}"` : ''}/>`;
-        }).join('\n');
-        const svgPencil = elements.filter(isPencil).map((p) => `<path d="${pointsToPath(p.points)}" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`).join('\n');
-        const svgBlocks = elements.filter(isBlock).map((b) => {
-            const x = b.x, y = b.y, w = b.width, h = b.height;
-            if (b.type === 'text') return `<text x="${x + w / 2}" y="${y + h / 2}" text-anchor="middle" dominant-baseline="middle" font-size="14" fill="#000">${escXml(b.title)}</text>`;
-            if (b.type === 'comment') return `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="#fefce8" stroke="#eab308" stroke-width="1.5" rx="8"/><text x="${x + w / 2}" y="${y + h / 2}" text-anchor="middle" dominant-baseline="middle" font-size="13" fill="#78350f">${escXml(b.title)}</text>`;
-            const isShape = isShapeBlockType(b.type);
-            if (isShape) {
-                const shapeColors: Record<string, string> = { rectangle: '#3b82f6', circle: '#ec4899', diamond: '#f59e0b', triangle: '#22c55e', sticky: '#eab308' };
-                const color = shapeColors[b.type] ?? '#3b82f6';
-                let shapeEl = '';
-                if (b.type === 'rectangle') shapeEl = `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="rgba(59,130,246,0.07)" stroke="${color}" stroke-width="2.5" rx="6"/>`;
-                else if (b.type === 'circle') shapeEl = `<ellipse cx="${x + w / 2}" cy="${y + h / 2}" rx="${w / 2}" ry="${h / 2}" fill="rgba(236,72,153,0.07)" stroke="${color}" stroke-width="2.5"/>`;
-                else if (b.type === 'diamond') shapeEl = `<polygon points="${x + w / 2},${y + PAD / 2} ${x + w - PAD / 2},${y + h / 2} ${x + w / 2},${y + h - PAD / 2} ${x + PAD / 2},${y + h / 2}" fill="none" stroke="${color}" stroke-width="2.5"/>`;
-                else if (b.type === 'triangle') shapeEl = `<polygon points="${x + w / 2},${y + PAD / 2} ${x + w - PAD / 2},${y + h - PAD / 2} ${x + PAD / 2},${y + h - PAD / 2}" fill="none" stroke="${color}" stroke-width="2.5"/>`;
-                else if (b.type === 'sticky') shapeEl = `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="#fef9c3" stroke="#eab308" stroke-width="2" rx="4"/>`;
-                return `${shapeEl}\n<text x="${x + w / 2}" y="${y + h / 2}" text-anchor="middle" dominant-baseline="middle" font-size="13" font-weight="600" fill="${color}">${escXml(b.title)}</text>`;
-            }
-            return `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="#fff" stroke="#1a56db" stroke-width="2" rx="10"/>
-<rect x="${x}" y="${y}" width="${w}" height="32" fill="#1a56db" rx="10"/>
-<rect x="${x}" y="${y + 22}" width="${w}" height="10" fill="#1a56db"/>
-<text x="${x + w / 2}" y="${y + 16}" text-anchor="middle" dominant-baseline="middle" font-size="13" font-weight="700" fill="#fff">${escXml(b.title)}</text>
-<text x="${x + 10}" y="${y + 48}" font-size="12" fill="#000" font-family="Consolas,monospace">${escXml(b.body)}</text>`;
-        }).join('\n');
-        const bgRect = transparent ? '' : `<rect x="${vx}" y="${vy}" width="${vw}" height="${vh}" fill="#ffffff"/>`;
-        return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vx} ${vy} ${vw} ${vh}" width="${vw}" height="${vh}">\n${defs}\n${bgRect}\n${svgLines}\n${svgPencil}\n${svgBlocks}\n</svg>`;
     };
 
     const handleExport = async (format: ExportFormat) => {
@@ -733,8 +767,8 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
             if (format === 'json') { downloadBlob(new Blob([JSON.stringify(elements, null, 2)], { type: 'application/json' }), `${fname}.json`); setExportOpen(false); return; }
             if (format === 'svg') { downloadBlob(new Blob([buildSvg(transparentBg)], { type: 'image/svg+xml' }), `${fname}.svg`); setExportOpen(false); return; }
             const canvas = await captureCanvas(transparentBg);
-            if (format === 'png') { canvas.toBlob((blob) => { if (blob) downloadBlob(blob, `${fname}.png`); }, 'image/png'); }
-            else if (format === 'jpeg') { canvas.toBlob((blob) => { if (blob) downloadBlob(blob, `${fname}.jpeg`); }, 'image/jpeg', 0.92); }
+            if (format === 'png') canvas.toBlob((blob) => { if (blob) downloadBlob(blob, `${fname}.png`); }, 'image/png');
+            else if (format === 'jpeg') canvas.toBlob((blob) => { if (blob) downloadBlob(blob, `${fname}.jpeg`); }, 'image/jpeg', 0.92);
             else if (format === 'pdf') {
                 const { jsPDF } = await import('jspdf');
                 const imgData = canvas.toDataURL('image/png');
@@ -772,47 +806,22 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
     };
 
     // ── toolbar helpers ───────────────────────────────────────────────────────
-    const togglePanel = (panel: LeftPanel) =>
-        setLeftPanel((cur) => (cur === panel ? 'none' : panel));
-
-    const selectTool = (t: DrawingTool) => {
-        setTool(t);
-        if (t !== 'select' && t !== 'pan') setLeftPanel('none');
-    };
-
-    const _applyTemplate = (id: string) => {
-        const tpl = DIAGRAM_TEMPLATES.find((t) => t.id === id);
-        if (tpl) { setElements(tpl.blocks); setTemplate(id); }
-        setLeftPanel('none');
-    };
+    const togglePanel = (panel: LeftPanel) => setLeftPanel((cur) => (cur === panel ? 'none' : panel));
+    const selectTool = (tl: DrawingTool) => { setTool(tl); if (tl !== 'select' && tl !== 'pan') setLeftPanel('none'); };
 
     // ── options ───────────────────────────────────────────────────────────────
-    const lineStyleOpts = useMemo<SelectOption[]>(
-        () => LINE_STYLE_OPTIONS.map((o) => ({ value: o.value, label: o.label })), [],
-    );
-    const endingOpts = useMemo<SelectOption[]>(
-        () => ENDING_OPTIONS.map((o) => ({ value: o.value, label: o.label })), [],
-    );
-
+    const lineStyleOpts = useMemo<SelectOption[]>(() => LINE_STYLE_OPTIONS.map((o) => ({ value: o.value, label: o.label })), []);
+    const endingOpts = useMemo<SelectOption[]>(() => ENDING_OPTIONS.map((o) => ({ value: o.value, label: o.label })), []);
     const isDrawing = tool === 'line' || tool === 'pencil';
 
-    const filteredShapes = useMemo(() => {
-        const q = shapeSearch.trim().toLowerCase();
-        if (!q) return SHAPE_BLOCK_TEMPLATES;
-        return SHAPE_BLOCK_TEMPLATES.filter((t) => t.name.toLowerCase().includes(q));
-    }, [shapeSearch]);
+    const filteredShapes = useMemo(() => { const q = shapeSearch.toLowerCase(); return q ? SHAPE_BLOCK_TEMPLATES.filter((t) => t.name.toLowerCase().includes(q)) : SHAPE_BLOCK_TEMPLATES; }, [shapeSearch]);
+    const filteredUml = useMemo(() => { const q = shapeSearch.toLowerCase(); return q ? UML_BLOCK_TEMPLATES.filter((t) => t.name.toLowerCase().includes(q)) : UML_BLOCK_TEMPLATES; }, [shapeSearch]);
+    const filteredBpmn = useMemo(() => { const q = shapeSearch.toLowerCase(); return q ? BPMN_BLOCK_TEMPLATES.filter((t) => t.name.toLowerCase().includes(q)) : BPMN_BLOCK_TEMPLATES; }, [shapeSearch]);
+    const filteredEr = useMemo(() => { const q = shapeSearch.toLowerCase(); return q ? ER_BLOCK_TEMPLATES.filter((t) => t.name.toLowerCase().includes(q)) : ER_BLOCK_TEMPLATES; }, [shapeSearch]);
 
-    const filteredUml = useMemo(() => {
-        const q = shapeSearch.trim().toLowerCase();
-        if (!q) return UML_BLOCK_TEMPLATES;
-        return UML_BLOCK_TEMPLATES.filter((t) => t.name.toLowerCase().includes(q));
-    }, [shapeSearch]);
-
-    const filteredText = useMemo(() => {
-        const q = shapeSearch.trim().toLowerCase();
-        if (!q) return TEXT_BLOCK_TEMPLATES;
-        return TEXT_BLOCK_TEMPLATES.filter((t) => t.name.toLowerCase().includes(q));
-    }, [shapeSearch]);
+    // ── minimap ───────────────────────────────────────────────────────────────
+    const minimapBounds = useMemo(() => getContentBounds(), [elements]); // eslint-disable-line react-hooks/exhaustive-deps
+    const MINI_W = 160, MINI_H = 90;
 
     // ─────────────────────────────────────────────────────────────────────────
     return (
@@ -823,23 +832,17 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                 <button type="button" className={styles.TopBarBtn} title={t.common.backToList} onClick={() => router.push('/diagrams')}>
                     <ArrowBackOutlinedIcon fontSize="small" />
                 </button>
-
                 <span className={styles.DiagramName}>{renaming !== diagramName ? renaming : diagramName}</span>
                 {canEdit && saveStatus !== 'idle' ? (
                     <span className={`${styles.SaveStatus} ${styles[`SaveStatus_${saveStatus}`]}`}>
                         {saveStatus === 'saving' ? 'Сохранение…' : saveStatus === 'saved' ? '✓ Сохранено' : 'Ошибка сохранения'}
                     </span>
                 ) : null}
-
                 <div className={styles.TopBarRight}>
                     {canEdit ? (
                         <>
-                            <button type="button" className={styles.TopBarBtn} title="Отменить (Ctrl+Z)" onClick={undo}>
-                                <UndoOutlinedIcon fontSize="small" />
-                            </button>
-                            <button type="button" className={styles.TopBarBtn} title="Повторить (Ctrl+Y)" onClick={redo}>
-                                <RedoOutlinedIcon fontSize="small" />
-                            </button>
+                            <button type="button" className={styles.TopBarBtn} title="Отменить (Ctrl+Z)" onClick={undo}><UndoOutlinedIcon fontSize="small" /></button>
+                            <button type="button" className={styles.TopBarBtn} title="Повторить (Ctrl+Y)" onClick={redo}><RedoOutlinedIcon fontSize="small" /></button>
                         </>
                     ) : null}
                     <button type="button" className={styles.TopBarBtn} title={mode === 'dark' ? 'Светлая тема' : 'Тёмная тема'} onClick={toggleMode}>
@@ -869,7 +872,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                             </div>
                         ) : null}
                         <div className={styles.SettingsRow}>
-                            <Typography variant="caption" style={{ fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-secondary, #888)' }}>Доступ</Typography>
+                            <Typography variant="caption" style={{ fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-secondary, #888)' }}>Доступ</Typography>
                             <label className={styles.PublicToggle}>
                                 <span>Публичный просмотр</span>
                                 <button type="button" role="switch" aria-checked={isPublic} className={`${styles.ToggleSwitch} ${isPublic ? styles.ToggleSwitch_on : ''}`} onClick={() => setIsPublic((v) => !v)} />
@@ -926,7 +929,6 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                     <button type="button" title="Перемещение по холсту (H)" className={`${styles.ToolBtn} ${tool === 'pan' ? styles.ToolBtn_active : ''}`} onClick={() => selectTool('pan')}>
                         <PanToolOutlinedIcon fontSize="small" />
                     </button>
-
                     {canEdit ? (
                         <>
                             <button type="button" title="Ластик" className={`${styles.ToolBtn} ${tool === 'eraser' ? styles.ToolBtn_active : ''}`} onClick={() => selectTool('eraser')}>
@@ -938,21 +940,25 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                             <button type="button" title="Линия" className={`${styles.ToolBtn} ${tool === 'line' ? styles.ToolBtn_active : ''} ${leftPanel === 'line-config' ? styles.ToolBtn_panel : ''}`} onClick={() => { setTool('line'); togglePanel('line-config'); }}>
                                 <TimelineOutlinedIcon fontSize="small" />
                             </button>
-
                             <div className={styles.ToolbarDivider} />
-
                             <button type="button" title="Фигуры" className={`${styles.ToolBtn} ${leftPanel === 'shapes' ? styles.ToolBtn_panel : ''}`} onClick={() => togglePanel('shapes')}>
                                 <CategoryOutlinedIcon fontSize="small" />
                             </button>
                             <button type="button" title="Текст и комментарии" className={`${styles.ToolBtn} ${leftPanel === 'text-panel' ? styles.ToolBtn_panel : ''}`} onClick={() => togglePanel('text-panel')}>
                                 <TextFieldsOutlinedIcon fontSize="small" />
                             </button>
-                            <button type="button" title="Шаблоны" className={`${styles.ToolBtn} ${leftPanel === 'templates' || leftPanel === 'uml' ? styles.ToolBtn_panel : ''}`} onClick={() => togglePanel('templates')}>
+                            <button type="button" title="Шаблоны" className={`${styles.ToolBtn} ${['templates','uml','bpmn','er'].includes(leftPanel) ? styles.ToolBtn_panel : ''}`} onClick={() => togglePanel('templates')}>
                                 <TableChartOutlinedIcon fontSize="small" />
+                            </button>
+                            <div className={styles.ToolbarDivider} />
+                            <button type="button" title={snapToGrid ? 'Сетка вкл.' : 'Сетка выкл.'} className={`${styles.ToolBtn} ${snapToGrid ? styles.ToolBtn_active : ''}`} onClick={() => setSnapToGrid((v) => !v)}>
+                                <GridOnOutlinedIcon fontSize="small" />
+                            </button>
+                            <button type="button" title="Свойства" className={`${styles.ToolBtn} ${showProps ? styles.ToolBtn_active : ''}`} onClick={() => setShowProps((v) => !v)}>
+                                <TuneOutlinedIcon fontSize="small" />
                             </button>
                         </>
                     ) : null}
-
                     <div className={styles.ToolbarSpacer} />
                     <button type="button" className={styles.ZoomBtn} title="Уменьшить" onClick={() => clampZoom(zoom - ZOOM_STEP)}>−</button>
                     <button type="button" className={styles.ZoomLabel} title="Сбросить" onClick={() => { setZoom(1); setPanX(40); setPanY(40); }}>{Math.round(zoom * 100)}%</button>
@@ -965,9 +971,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                         <Typography variant="subtitle2" className={styles.PanelTitle}>Базовые элементы</Typography>
                         <input className={styles.PanelSearch} placeholder="Поиск фигур…" value={shapeSearch} onChange={(e) => setShapeSearch(e.target.value)} />
                         {filteredShapes.map((tpl) => (
-                            <button key={tpl.type} type="button" className={`${styles.PaletteItem} ${styles[`PaletteItem_${tpl.type}`]}`} draggable onClick={() => addBlock(tpl)} onDragStart={(e) => onDragStart(e, tpl.type)}>
-                                {tpl.name}
-                            </button>
+                            <button key={tpl.type} type="button" className={`${styles.PaletteItem} ${styles[`PaletteItem_${tpl.type}`]}`} draggable onClick={() => addBlock(tpl)} onDragStart={(e) => onDragStart(e, tpl.type)}>{tpl.name}</button>
                         ))}
                         {filteredShapes.length === 0 ? <Typography variant="body2" color="text.secondary">Ничего не найдено</Typography> : null}
                     </div>
@@ -975,30 +979,46 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                     <div className={styles.LeftPanel}>
                         <Typography variant="subtitle2" className={styles.PanelTitle}>Текстовые блоки</Typography>
                         {TEXT_BLOCK_TEMPLATES.map((tpl) => (
-                            <button key={tpl.type} type="button" className={`${styles.PaletteItem} ${styles[`PaletteItem_${tpl.type}`]}`} draggable onClick={() => addBlock(tpl)} onDragStart={(e) => onDragStart(e, tpl.type)}>
-                                {tpl.name}
-                            </button>
+                            <button key={tpl.type} type="button" className={`${styles.PaletteItem} ${styles[`PaletteItem_${tpl.type}`]}`} draggable onClick={() => addBlock(tpl)} onDragStart={(e) => onDragStart(e, tpl.type)}>{tpl.name}</button>
                         ))}
                         <Typography variant="caption" color="text.secondary" style={{ marginTop: 4 }}>Двойной клик — редактировать</Typography>
                     </div>
                 ) : leftPanel === 'templates' ? (
                     <div className={styles.LeftPanel}>
-                        <Typography variant="subtitle2" className={styles.PanelTitle}>Шаблоны</Typography>
-                        <button type="button" className={styles.PaletteItem} onClick={() => setLeftPanel('uml')}>
-                            <TableChartOutlinedIcon fontSize="small" style={{ marginRight: 6 }} />UML
-                        </button>
+                        <Typography variant="subtitle2" className={styles.PanelTitle}>Библиотеки</Typography>
+                        <button type="button" className={styles.PaletteItem} onClick={() => setLeftPanel('uml')}><TableChartOutlinedIcon fontSize="small" style={{ marginRight: 6 }} />UML</button>
+                        <button type="button" className={styles.PaletteItem} onClick={() => setLeftPanel('bpmn')}>BPMN</button>
+                        <button type="button" className={styles.PaletteItem} onClick={() => setLeftPanel('er')}>ER-диаграмма</button>
                     </div>
                 ) : leftPanel === 'uml' ? (
                     <div className={styles.LeftPanel}>
-                        <button type="button" className={styles.PanelBack} onClick={() => setLeftPanel('templates')}>← Шаблоны</button>
+                        <button type="button" className={styles.PanelBack} onClick={() => setLeftPanel('templates')}>← Библиотеки</button>
                         <Typography variant="subtitle2" className={styles.PanelTitle}>UML-блоки</Typography>
                         <input className={styles.PanelSearch} placeholder="Поиск…" value={shapeSearch} onChange={(e) => setShapeSearch(e.target.value)} />
                         {filteredUml.map((tpl) => (
-                            <button key={tpl.type} type="button" className={styles.PaletteItem} draggable onClick={() => addBlock(tpl)} onDragStart={(e) => onDragStart(e, tpl.type)}>
-                                {tpl.name}
-                            </button>
+                            <button key={tpl.type} type="button" className={styles.PaletteItem} draggable onClick={() => addBlock(tpl)} onDragStart={(e) => onDragStart(e, tpl.type)}>{tpl.name}</button>
                         ))}
                         {filteredUml.length === 0 ? <Typography variant="body2" color="text.secondary">Ничего не найдено</Typography> : null}
+                    </div>
+                ) : leftPanel === 'bpmn' ? (
+                    <div className={styles.LeftPanel}>
+                        <button type="button" className={styles.PanelBack} onClick={() => setLeftPanel('templates')}>← Библиотеки</button>
+                        <Typography variant="subtitle2" className={styles.PanelTitle}>BPMN</Typography>
+                        <input className={styles.PanelSearch} placeholder="Поиск…" value={shapeSearch} onChange={(e) => setShapeSearch(e.target.value)} />
+                        {filteredBpmn.map((tpl) => (
+                            <button key={tpl.type} type="button" className={`${styles.PaletteItem} ${styles[`PaletteItem_${tpl.type}`]}`} draggable onClick={() => addBlock(tpl)} onDragStart={(e) => onDragStart(e, tpl.type)}>{tpl.name}</button>
+                        ))}
+                        {filteredBpmn.length === 0 ? <Typography variant="body2" color="text.secondary">Ничего не найдено</Typography> : null}
+                    </div>
+                ) : leftPanel === 'er' ? (
+                    <div className={styles.LeftPanel}>
+                        <button type="button" className={styles.PanelBack} onClick={() => setLeftPanel('templates')}>← Библиотеки</button>
+                        <Typography variant="subtitle2" className={styles.PanelTitle}>ER-диаграмма</Typography>
+                        <input className={styles.PanelSearch} placeholder="Поиск…" value={shapeSearch} onChange={(e) => setShapeSearch(e.target.value)} />
+                        {filteredEr.map((tpl) => (
+                            <button key={tpl.type} type="button" className={`${styles.PaletteItem} ${styles[`PaletteItem_${tpl.type}`]}`} draggable onClick={() => addBlock(tpl)} onDragStart={(e) => onDragStart(e, tpl.type)}>{tpl.name}</button>
+                        ))}
+                        {filteredEr.length === 0 ? <Typography variant="body2" color="text.secondary">Ничего не найдено</Typography> : null}
                     </div>
                 ) : leftPanel === 'line-config' ? (
                     <div className={styles.LeftPanel}>
@@ -1020,26 +1040,47 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                     onPointerDown={onCanvasPointerDown}
                     onPointerMove={onCanvasPointerMove}
                     onPointerUp={onCanvasPointerUp}
+                    onClick={() => { setSelectedIds(new Set()); setSelectedLineId(null); }}
                 >
                     <div ref={canvasContentRef} className={styles.CanvasContent} style={{ transform: `translate(${panX}px, ${panY}px) scale(${zoom})` }}>
                         <svg className={styles.CanvasSvg} width="100000" height="100000">
-                            <SvgDefs />
-                            {elements.filter(isLine).map((line) => (
-                                <line key={line.id} x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2}
-                                    stroke="var(--text-color)" strokeWidth="2" strokeDasharray={dashArray(line.style)}
-                                    markerEnd={mEnd(line.endEnding)} markerStart={mStart(line.startEnding)}
-                                    style={{ cursor: tool === 'eraser' ? 'pointer' : 'default', pointerEvents: tool === 'eraser' ? 'stroke' : 'none' }}
-                                    onClick={() => { if (tool === 'eraser') { pushHistory(); removeEl(line.id); } }}
-                                />
-                            ))}
+                            <SvgDefs snapToGrid={snapToGrid} />
+                            {snapToGrid ? <rect width="100000" height="100000" fill="url(#grid-dots)" style={{ pointerEvents: 'none' }} /> : null}
+
+                            {elements.filter(isLine).map((line) => {
+                                const c = resolveLineCoords(line, blockMap);
+                                const isSelLine = selectedLineId === line.id;
+                                return (
+                                    <g key={line.id}>
+                                        {/* invisible wider hit area */}
+                                        <line x1={c.x1} y1={c.y1} x2={c.x2} y2={c.y2}
+                                            stroke="transparent" strokeWidth="12"
+                                            style={{ cursor: tool === 'select' ? 'pointer' : tool === 'eraser' ? 'pointer' : 'default', pointerEvents: 'stroke' }}
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                if (tool === 'eraser') { pushHistory(); removeEl(line.id); }
+                                                else if (tool === 'select') { setSelectedLineId(line.id); setSelectedIds(new Set()); }
+                                            }}
+                                        />
+                                        <line x1={c.x1} y1={c.y1} x2={c.x2} y2={c.y2}
+                                            stroke={line.strokeColor ?? 'var(--text-color)'}
+                                            strokeWidth={isSelLine ? (line.strokeWidth ?? 2) + 1 : (line.strokeWidth ?? 2)}
+                                            strokeDasharray={dashArray(line.style)}
+                                            markerEnd={mEnd(line.endEnding)} markerStart={mStart(line.startEnding)}
+                                            style={{ pointerEvents: 'none', ...(isSelLine ? { filter: 'drop-shadow(0 0 3px var(--primary))' } : {}) }}
+                                        />
+                                    </g>
+                                );
+                            })}
+
                             {elements.filter(isPencil).map((p) => (
-                                <path key={p.id} d={pointsToPath(p.points)}
-                                    fill="none" stroke="var(--text-color)" strokeWidth="2"
+                                <path key={p.id} d={pointsToPath(p.points)} fill="none" stroke="var(--text-color)" strokeWidth="2"
                                     strokeLinecap="round" strokeLinejoin="round"
                                     style={{ cursor: tool === 'eraser' ? 'pointer' : 'default', pointerEvents: tool === 'eraser' ? 'stroke' : 'none' }}
                                     onClick={() => { if (tool === 'eraser') { pushHistory(); removeEl(p.id); } }}
                                 />
                             ))}
+
                             {activeLineStart && activeLineCurrent ? (
                                 <line x1={activeLineStart.x} y1={activeLineStart.y} x2={activeLineCurrent.x} y2={activeLineCurrent.y}
                                     stroke="var(--primary)" strokeWidth="2" strokeDasharray={dashArray(lineStyle)}
@@ -1066,8 +1107,12 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                         {elements.filter(isBlock).map((block) => {
                             const isEditing = editing?.id === block.id;
                             const isShape = isShapeBlockType(block.type);
+                            const isBpmn = isBpmnBlockType(block.type);
+                            const isEr = isErBlockType(block.type);
                             const isText = isTextBlock(block);
                             const isSelected = selectedIds.has(block.id);
+                            const showAnchors = tool === 'line' && !isEditing;
+
                             return (
                                 <div
                                     key={block.id}
@@ -1076,11 +1121,21 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                                         styles.Block,
                                         styles[`Block_${block.type}`],
                                         isShape ? styles.Block_shape : '',
+                                        isBpmn ? styles.Block_bpmn : '',
+                                        isEr ? styles.Block_er : '',
                                         isSelected && !isEditing ? styles.Block_selected : '',
                                     ].filter(Boolean).join(' ')}
-                                    style={{ left: block.x, top: block.y, width: block.width, height: block.height, cursor: tool === 'eraser' ? 'pointer' : undefined }}
+                                    style={{
+                                        left: block.x, top: block.y, width: block.width, height: block.height,
+                                        cursor: tool === 'eraser' ? 'pointer' : undefined,
+                                        ...(block.fillColor ? { '--block-fill': block.fillColor } as React.CSSProperties : {}),
+                                        ...(block.strokeColor ? { '--block-stroke': block.strokeColor } as React.CSSProperties : {}),
+                                        ...(block.strokeWidth ? { '--block-stroke-width': `${block.strokeWidth}px` } as React.CSSProperties : {}),
+                                        ...(block.fontSize ? { '--block-font-size': `${block.fontSize}px` } as React.CSSProperties : {}),
+                                    }}
                                     onPointerDown={(e) => onBlockPointerDown(e, block)}
                                     onDoubleClick={() => startEditing(block)}
+                                    onPointerEnter={() => { if (tool === 'line') setAnchorHover(null); }}
                                 >
                                     {isEditing ? (
                                         isText ? (
@@ -1099,7 +1154,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                                                     onBlur={commitEdit}
                                                     onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); commitEdit(); } if (e.key === 'Escape') setEditing(null); }}
                                                 />
-                                                {!isShape ? (
+                                                {!isShape && !isBpmn && !isEr ? (
                                                     <textarea className={styles.BlockEditBody} value={editing.body}
                                                         onChange={(e) => setEditing({ ...editing, body: e.target.value })}
                                                         onBlur={commitEdit}
@@ -1119,6 +1174,10 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                                                 <pre className={styles.TextBlockPre}>{block.title}</pre>
                                             </div>
                                         )
+                                    ) : isBpmn ? (
+                                        <BpmnBlockContent block={block} />
+                                    ) : isEr ? (
+                                        <ErBlockContent block={block} />
                                     ) : isShape ? (
                                         <div className={styles.BlockShapeContent}>
                                             {block.type === 'diamond' ? (
@@ -1138,6 +1197,28 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                                             <pre className={styles.BlockBody}>{block.body}</pre>
                                         </>
                                     )}
+
+                                    {/* anchor dots shown in line-draw mode */}
+                                    {showAnchors ? ANCHOR_SIDES.map((side) => {
+                                        const isHot = anchorHover?.blockId === block.id && anchorHover.side === side;
+                                        return (
+                                            <div
+                                                key={side}
+                                                className={`${styles.AnchorDot} ${styles[`AnchorDot_${side}`]} ${isHot ? styles.AnchorDot_hot : ''}`}
+                                                onPointerDown={(e) => {
+                                                    e.stopPropagation();
+                                                    const ap = getAnchorPoint(block, side);
+                                                    lineStartAnchorRef.current = { blockId: block.id, side };
+                                                    setActiveLineStart(ap);
+                                                    setActiveLineCurrent(ap);
+                                                    (canvasRef.current as HTMLDivElement | null)?.setPointerCapture(e.pointerId);
+                                                }}
+                                                onPointerEnter={() => setAnchorHover({ blockId: block.id, side })}
+                                                onPointerLeave={() => setAnchorHover(null)}
+                                            />
+                                        );
+                                    }) : null}
+
                                     {canEdit && tool === 'select' && !isEditing && !isText ? (
                                         <button type="button" aria-label="Resize block" className={styles.ResizeHandle} onPointerDown={(e) => onBlockResize(e, block)} />
                                     ) : null}
@@ -1145,8 +1226,162 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                             );
                         })}
                     </div>
+
+                    {/* ── MINIMAP ── */}
+                    {minimapBounds && elements.length > 0 ? (
+                        <div className={styles.Minimap} title="Миникарта">
+                            <svg width={MINI_W} height={MINI_H}
+                                viewBox={`${minimapBounds.x} ${minimapBounds.y} ${minimapBounds.width} ${minimapBounds.height}`}
+                                style={{ width: MINI_W, height: MINI_H }}
+                            >
+                                {elements.filter(isLine).map((l) => {
+                                    const c = resolveLineCoords(l, blockMap);
+                                    return <line key={l.id} x1={c.x1} y1={c.y1} x2={c.x2} y2={c.y2} stroke="var(--text-color)" strokeWidth="3" opacity="0.5" />;
+                                })}
+                                {elements.filter(isBlock).map((b) => (
+                                    <rect key={b.id} x={b.x} y={b.y} width={b.width} height={b.height}
+                                        fill={b.fillColor ?? (isShapeBlockType(b.type) ? 'var(--primary)' : 'var(--surface)')}
+                                        stroke={b.strokeColor ?? 'var(--primary)'} strokeWidth="3" rx="4" opacity="0.8"
+                                    />
+                                ))}
+                            </svg>
+                        </div>
+                    ) : null}
                 </div>
+
+                {/* ── PROPERTIES PANEL ── */}
+                {showProps ? (
+                    <div className={styles.PropertiesPanel}>
+                        <Typography variant="subtitle2" className={styles.PanelTitle}>Свойства</Typography>
+                        {selectedBlock ? (
+                            <>
+                                <div className={styles.PropRow}>
+                                    <label className={styles.PropLabel}>Заливка</label>
+                                    <input type="color" className={styles.ColorInput}
+                                        value={selectedBlock.fillColor ?? '#ffffff'}
+                                        onChange={(e) => { pushHistory(); updateEl(selectedBlock.id, { fillColor: e.target.value }); }}
+                                    />
+                                </div>
+                                <div className={styles.PropRow}>
+                                    <label className={styles.PropLabel}>Цвет рамки</label>
+                                    <input type="color" className={styles.ColorInput}
+                                        value={selectedBlock.strokeColor ?? '#1a56db'}
+                                        onChange={(e) => { pushHistory(); updateEl(selectedBlock.id, { strokeColor: e.target.value }); }}
+                                    />
+                                </div>
+                                <div className={styles.PropRow}>
+                                    <label className={styles.PropLabel}>Толщина рамки</label>
+                                    <input type="range" min="1" max="6" step="1"
+                                        value={selectedBlock.strokeWidth ?? 2}
+                                        onChange={(e) => updateEl(selectedBlock.id, { strokeWidth: Number(e.target.value) })}
+                                        onPointerUp={() => pushHistory()}
+                                        style={{ flex: 1 }}
+                                    />
+                                    <span className={styles.PropValue}>{selectedBlock.strokeWidth ?? 2}px</span>
+                                </div>
+                                <div className={styles.PropRow}>
+                                    <label className={styles.PropLabel}>Размер текста</label>
+                                    <input type="range" min="10" max="24" step="1"
+                                        value={selectedBlock.fontSize ?? 13}
+                                        onChange={(e) => updateEl(selectedBlock.id, { fontSize: Number(e.target.value) })}
+                                        onPointerUp={() => pushHistory()}
+                                        style={{ flex: 1 }}
+                                    />
+                                    <span className={styles.PropValue}>{selectedBlock.fontSize ?? 13}px</span>
+                                </div>
+                            </>
+                        ) : selectedLine ? (
+                            <>
+                                <div className={styles.PropRow}>
+                                    <label className={styles.PropLabel}>Цвет линии</label>
+                                    <input type="color" className={styles.ColorInput}
+                                        value={selectedLine.strokeColor ?? '#000000'}
+                                        onChange={(e) => { pushHistory(); updateLine(selectedLine.id, { strokeColor: e.target.value }); }}
+                                    />
+                                </div>
+                                <div className={styles.PropRow}>
+                                    <label className={styles.PropLabel}>Толщина</label>
+                                    <input type="range" min="1" max="8" step="1"
+                                        value={selectedLine.strokeWidth ?? 2}
+                                        onChange={(e) => updateLine(selectedLine.id, { strokeWidth: Number(e.target.value) })}
+                                        onPointerUp={() => pushHistory()}
+                                        style={{ flex: 1 }}
+                                    />
+                                    <span className={styles.PropValue}>{selectedLine.strokeWidth ?? 2}px</span>
+                                </div>
+                                <Select label="Стиль" value={selectedLine.style} onChange={(v) => { pushHistory(); updateLine(selectedLine.id, { style: v as LineStyle }); }} options={lineStyleOpts} />
+                                <Select label="Конец" value={selectedLine.endEnding} onChange={(v) => { pushHistory(); updateLine(selectedLine.id, { endEnding: v as LineEnding }); }} options={endingOpts} />
+                            </>
+                        ) : (
+                            <Typography variant="body2" color="text.secondary" style={{ marginTop: 8 }}>
+                                Выберите блок или линию
+                            </Typography>
+                        )}
+                    </div>
+                ) : null}
             </div>
+        </div>
+    );
+}
+
+// ─── BPMN block renderer ──────────────────────────────────────────────────────
+
+function BpmnBlockContent({ block }: { block: DiagramCanvasBlock }) {
+    const w = block.width, h = block.height;
+    if (block.type === 'bpmn-event') {
+        return (
+            <svg viewBox={`0 0 ${w} ${h}`} width={w} height={h} className={styles.BpmnSvg}>
+                <circle cx={w/2} cy={h/2} r={Math.min(w,h)/2-3} fill="var(--block-fill,#fff)" stroke="var(--block-stroke,#22c55e)" strokeWidth="var(--block-stroke-width,2)" />
+            </svg>
+        );
+    }
+    if (block.type === 'bpmn-end') {
+        return (
+            <svg viewBox={`0 0 ${w} ${h}`} width={w} height={h} className={styles.BpmnSvg}>
+                <circle cx={w/2} cy={h/2} r={Math.min(w,h)/2-3} fill="var(--block-fill,#fff)" stroke="var(--block-stroke,#ef4444)" strokeWidth="var(--block-stroke-width,4)" />
+            </svg>
+        );
+    }
+    if (block.type === 'bpmn-gateway') {
+        return (
+            <svg viewBox={`0 0 ${w} ${h}`} width={w} height={h} className={styles.BpmnSvg}>
+                <polygon points={`${w/2},2 ${w-2},${h/2} ${w/2},${h-2} 2,${h/2}`} fill="var(--block-fill,#fef9c3)" stroke="var(--block-stroke,#eab308)" strokeWidth="var(--block-stroke-width,2)" />
+                {block.title ? <text x={w/2} y={h/2} textAnchor="middle" dominantBaseline="middle" fontSize="11" fill="var(--block-stroke,#eab308)">{block.title}</text> : null}
+            </svg>
+        );
+    }
+    // bpmn-task
+    return (
+        <div className={styles.BpmnTask}>
+            <span className={styles.BpmnTaskLabel}>{block.title}</span>
+        </div>
+    );
+}
+
+// ─── ER block renderer ────────────────────────────────────────────────────────
+
+function ErBlockContent({ block }: { block: DiagramCanvasBlock }) {
+    const w = block.width, h = block.height;
+    if (block.type === 'er-attribute') {
+        return (
+            <div className={styles.ErAttribute}>
+                <span>{block.title}</span>
+            </div>
+        );
+    }
+    if (block.type === 'er-relation') {
+        return (
+            <svg viewBox={`0 0 ${w} ${h}`} width={w} height={h} className={styles.BpmnSvg}>
+                <polygon points={`${w/2},2 ${w-2},${h/2} ${w/2},${h-2} 2,${h/2}`} fill="var(--block-fill,#f3e8ff)" stroke="var(--block-stroke,#7c3aed)" strokeWidth="var(--block-stroke-width,2)" />
+                <text x={w/2} y={h/2} textAnchor="middle" dominantBaseline="middle" fontSize="12" fill="var(--block-stroke,#7c3aed)">{block.title}</text>
+            </svg>
+        );
+    }
+    // er-entity
+    return (
+        <div className={styles.ErEntity}>
+            <div className={styles.ErEntityHeader}>{block.title}</div>
+            <pre className={styles.ErEntityBody}>{block.body}</pre>
         </div>
     );
 }
