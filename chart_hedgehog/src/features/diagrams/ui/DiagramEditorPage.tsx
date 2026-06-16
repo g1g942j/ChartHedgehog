@@ -13,6 +13,7 @@ import BackspaceOutlinedIcon from '@mui/icons-material/BackspaceOutlined';
 import CategoryOutlinedIcon from '@mui/icons-material/CategoryOutlined';
 import DeleteOutlineOutlinedIcon from '@mui/icons-material/DeleteOutlineOutlined';
 import DriveFileRenameOutlineOutlinedIcon from '@mui/icons-material/DriveFileRenameOutlineOutlined';
+import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
 import GestureOutlinedIcon from '@mui/icons-material/GestureOutlined';
 import GroupsOutlinedIcon from '@mui/icons-material/GroupsOutlined';
 import MoreVertOutlinedIcon from '@mui/icons-material/MoreVertOutlined';
@@ -52,6 +53,7 @@ import { deleteDiagram, updateDiagramName } from '../api/diagrams';
 type DrawingTool = 'select' | 'eraser' | 'pencil' | 'line';
 type LeftPanel = 'none' | 'shapes' | 'uml' | 'line-config' | 'templates';
 type EditingBlock = { id: string; title: string; body: string };
+type ExportFormat = 'json' | 'png' | 'jpeg' | 'pdf';
 
 const ZOOM_STEP = 0.1;
 const ZOOM_MIN = 0.25;
@@ -143,6 +145,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
     const router = useRouter();
     const queryClient = useQueryClient();
     const canvasRef = useRef<HTMLDivElement | null>(null);
+    const canvasContentRef = useRef<HTMLDivElement | null>(null);
 
     const canEdit = currentUserRole === 'OWNER' || currentUserRole === 'EDITOR';
     const canDelete = currentUserRole === 'OWNER';
@@ -169,6 +172,8 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
     const [leftPanel, setLeftPanel] = useState<LeftPanel>('none');
     const [menuOpen, setMenuOpen] = useState(false);
     const [templatesOpen, setTemplatesOpen] = useState(false);
+    const [exportOpen, setExportOpen] = useState(false);
+    const [isExporting, setIsExporting] = useState(false);
 
     // ── settings form ─────────────────────────────────────────────────────────
     const [renaming, setRenaming] = useState(diagramName);
@@ -320,6 +325,77 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
         }
     };
 
+    // ── export ────────────────────────────────────────────────────────────────
+    const downloadBlob = (blob: Blob, filename: string) => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    };
+
+    const captureCanvas = async () => {
+        const { default: html2canvas } = await import('html2canvas');
+        const el = canvasContentRef.current;
+        if (!el) throw new Error('Canvas not found');
+        const savedZoom = zoom;
+        setZoom(1);
+        await new Promise<void>((r) => setTimeout(r, 150));
+        const canvas = await html2canvas(el, {
+            scale: 2,
+            backgroundColor: '#ffffff',
+            useCORS: true,
+            logging: false,
+        });
+        setZoom(savedZoom);
+        return canvas;
+    };
+
+    const handleExport = async (format: ExportFormat) => {
+        setIsExporting(true);
+        try {
+            if (format === 'json') {
+                const data = JSON.stringify(elements, null, 2);
+                downloadBlob(new Blob([data], { type: 'application/json' }), 'diagram.json');
+                setExportOpen(false);
+                return;
+            }
+
+            const canvas = await captureCanvas();
+
+            if (format === 'png') {
+                canvas.toBlob((blob) => {
+                    if (blob) downloadBlob(blob, 'diagram.png');
+                }, 'image/png');
+            } else if (format === 'jpeg') {
+                canvas.toBlob((blob) => {
+                    if (blob) downloadBlob(blob, 'diagram.jpeg');
+                }, 'image/jpeg', 0.92);
+            } else if (format === 'pdf') {
+                const { jsPDF } = await import('jspdf');
+                const imgData = canvas.toDataURL('image/png');
+                const w = canvas.width / 2;
+                const h = canvas.height / 2;
+                const pdf = new jsPDF({
+                    orientation: w >= h ? 'landscape' : 'portrait',
+                    unit: 'px',
+                    format: [w, h],
+                });
+                pdf.addImage(imgData, 'PNG', 0, 0, w, h);
+                pdf.save('diagram.pdf');
+            }
+
+            setExportOpen(false);
+        } catch (err) {
+            console.error('Export failed', err);
+        } finally {
+            setIsExporting(false);
+        }
+    };
+
     // ── save ──────────────────────────────────────────────────────────────────
     const handleSave = async () => {
         setIsSaving(true); setCanvasError(null);
@@ -404,6 +480,14 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                 <span className={styles.DiagramName}>{renaming !== diagramName ? renaming : diagramName}</span>
 
                 <div className={styles.TopBarRight}>
+                    <button
+                        type="button"
+                        className={styles.TopBarBtn}
+                        title="Скачать диаграмму"
+                        onClick={() => { setExportOpen(true); setMenuOpen(false); }}
+                    >
+                        <FileDownloadOutlinedIcon fontSize="small" />
+                    </button>
                     {canEdit ? (
                         <Button
                             variant="contained"
@@ -484,6 +568,45 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                             </Button>
                         ) : null}
                     </aside>
+                </>
+            ) : null}
+
+            {/* ── EXPORT MODAL ── */}
+            {exportOpen ? (
+                <>
+                    <div className={styles.ModalOverlay} onClick={() => !isExporting && setExportOpen(false)} />
+                    <div className={styles.Modal} role="dialog" aria-modal="true">
+                        <Typography variant="subtitle1" style={{ marginBottom: 4 }}>
+                            Скачать диаграмму
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary" style={{ marginBottom: 16 }}>
+                            Выберите формат файла
+                        </Typography>
+                        <div className={styles.FormatGrid}>
+                            {(['json', 'png', 'jpeg', 'pdf'] as ExportFormat[]).map((fmt) => (
+                                <button
+                                    key={fmt}
+                                    type="button"
+                                    className={styles.FormatBtn}
+                                    disabled={isExporting}
+                                    onClick={() => void handleExport(fmt)}
+                                >
+                                    <span className={styles.FormatExt}>{fmt.toUpperCase()}</span>
+                                    <span className={styles.FormatDesc}>
+                                        {fmt === 'json' ? 'Данные диаграммы'
+                                            : fmt === 'png' ? 'Изображение PNG'
+                                            : fmt === 'jpeg' ? 'Изображение JPEG'
+                                            : 'Документ PDF'}
+                                    </span>
+                                </button>
+                            ))}
+                        </div>
+                        {isExporting ? (
+                            <Typography variant="body2" color="text.secondary" style={{ marginTop: 12, textAlign: 'center' }}>
+                                Экспорт…
+                            </Typography>
+                        ) : null}
+                    </div>
                 </>
             ) : null}
 
@@ -633,7 +756,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                     onDragOver={(e) => e.preventDefault()}
                     onDrop={onDrop}
                 >
-                    <div className={styles.CanvasContent} style={{ transform: `scale(${zoom})` }}>
+                    <div ref={canvasContentRef} className={styles.CanvasContent} style={{ transform: `scale(${zoom})` }}>
 
                         <svg
                             className={`${styles.CanvasSvg} ${isDrawing ? styles.CanvasSvg_active : ''}`}

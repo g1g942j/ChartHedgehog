@@ -67,6 +67,76 @@
     align-items: center;
 }
 
+// ── EXPORT MODAL ─────────────────────────────────────────────────────────────
+
+.ModalOverlay {
+    position: fixed;
+    inset: 0;
+    z-index: 29;
+    background: rgba(0, 0, 0, 0.35);
+    backdrop-filter: blur(2px);
+}
+
+.Modal {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    z-index: 30;
+    width: 360px;
+    padding: 24px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.2);
+    transform: translate(-50%, -50%);
+}
+
+.FormatGrid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+.FormatBtn {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    align-items: center;
+    justify-content: center;
+    padding: 18px 12px;
+    cursor: pointer;
+    background: var(--bg-soft);
+    border: 2px solid var(--border);
+    border-radius: 12px;
+    transition: border-color 0.15s, background 0.15s;
+
+    &:hover:not(:disabled) {
+        background: color-mix(in srgb, var(--primary) 8%, var(--surface));
+        border-color: var(--primary);
+
+        .FormatExt { color: var(--primary); }
+    }
+
+    &:disabled {
+        cursor: wait;
+        opacity: 0.6;
+    }
+}
+
+.FormatExt {
+    font-size: 20px;
+    font-weight: 800;
+    color: var(--text-color);
+    letter-spacing: 1px;
+    transition: color 0.15s;
+}
+
+.FormatDesc {
+    font-size: 11px;
+    color: var(--text-secondary, #888);
+    text-align: center;
+}
+
 // ── SETTINGS PANEL (⋮ menu) ───────────────────────────────────────────────────
 
 .Overlay {
