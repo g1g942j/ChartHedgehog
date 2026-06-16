@@ -20,11 +20,24 @@ export class DiagramDetailPage {
   }
 
   async canvasSaveButton() {
+    // Autosave is now automatic; this waits for the "Сохранено" status indicator
     return waitVisible(
       this.driver,
-      By.xpath(`//button[contains(normalize-space(.), 'Сохранить диаграмму')]`),
-      10_000,
+      By.xpath(`//span[contains(normalize-space(.), 'Сохранено')]`),
+      12_000,
     );
+  }
+
+  async undoButton() {
+    return waitVisible(this.driver, By.css(`button[title="Отменить (Ctrl+Z)"]`), 10_000);
+  }
+
+  async redoButton() {
+    return waitVisible(this.driver, By.css(`button[title="Повторить (Ctrl+Y)"]`), 10_000);
+  }
+
+  async textPanelButton() {
+    return waitVisible(this.driver, By.css(`button[title="Текст и комментарии"]`), 10_000);
   }
 
   async openMenu(): Promise<void> {
