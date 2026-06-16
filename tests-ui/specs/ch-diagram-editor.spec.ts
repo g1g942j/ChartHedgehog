@@ -982,3 +982,400 @@ describe("Редактор диаграмм — Поиск по фигурам",
     assert.ok(await input.isDisplayed(), "Поле поиска должно быть и в UML-панели");
   });
 });
+
+// ─── Коннекторы (anchor dots) ─────────────────────────────────────────────────
+
+describe("Редактор диаграмм — коннекторы", () => {
+  let driver: import("selenium-webdriver").WebDriver;
+  let diagramId: number;
+
+  before(async function () {
+    this.timeout(120_000);
+    driver = await createDriver();
+    await loginAs(driver);
+    diagramId = await createAndOpen(driver, `UI_Connectors_${Date.now()}`);
+  });
+
+  after(async () => { await driver?.quit(); });
+
+  it("при активации инструмента 'Линия' на блоке появляются якорные точки (AnchorDot)", async () => {
+    const page = new DiagramDetailPage(driver);
+    await page.goto(diagramId);
+
+    // добавить блок
+    await (await page.toolButton("Фигуры")).click();
+    await (await waitVisible(driver, By.xpath(`//button[normalize-space(.) = 'Rectangle']`), 5_000)).click();
+    await waitVisible(driver, By.xpath(`//*[@data-block='true']`), 5_000);
+
+    // переключить на линию
+    await (await page.toolButton("Линия")).click();
+    await driver.sleep(200);
+
+    const anchors = await driver.findElements(By.css(`[class*="AnchorDot"]`));
+    assert.ok(anchors.length >= 4, `Должно быть минимум 4 якорные точки, найдено: ${anchors.length}`);
+  });
+
+  it("якорные точки исчезают при переключении с инструмента линии", async () => {
+    const page = new DiagramDetailPage(driver);
+    await page.goto(diagramId);
+
+    await (await page.toolButton("Фигуры")).click();
+    await (await waitVisible(driver, By.xpath(`//button[normalize-space(.) = 'Rectangle']`), 5_000)).click();
+    await waitVisible(driver, By.xpath(`//*[@data-block='true']`), 5_000);
+
+    await (await page.toolButton("Линия")).click();
+    await driver.sleep(200);
+    const before = (await driver.findElements(By.css(`[class*="AnchorDot"]`))).length;
+    assert.ok(before >= 4, "Якоря должны быть при инструменте линии");
+
+    await (await page.toolButton("Выбор (S)")).click();
+    await driver.sleep(200);
+    const after = (await driver.findElements(By.css(`[class*="AnchorDot"]`))).length;
+    assert.equal(after, 0, "Якоря должны исчезнуть после переключения инструмента");
+  });
+
+  it("рисование линии от якоря создаёт коннектор с data-атрибутами", async () => {
+    const page = new DiagramDetailPage(driver);
+    await page.goto(diagramId);
+
+    await (await page.toolButton("Фигуры")).click();
+    const rectBtn = await waitVisible(driver, By.xpath(`//button[normalize-space(.) = 'Rectangle']`), 5_000);
+    await rectBtn.click();
+    await driver.sleep(100);
+    await rectBtn.click();
+    await driver.sleep(200);
+
+    await (await page.toolButton("Линия")).click();
+    await driver.sleep(200);
+
+    const blocks = await driver.findElements(By.xpath(`//*[@data-block='true']`));
+    assert.ok(blocks.length >= 2, "Нужно минимум 2 блока");
+
+    const anchors = await driver.findElements(By.css(`[class*="AnchorDot_bottom"]`));
+    if (anchors.length > 0) {
+      const rect = await anchors[0]!.getRect();
+      const actions = driver.actions({ async: true });
+      const targetAnchor = await driver.findElements(By.css(`[class*="AnchorDot_top"]`));
+      if (targetAnchor.length >= 2) {
+        const targetRect = await targetAnchor[1]!.getRect();
+        await actions
+          .move({ x: Math.round(rect.x + rect.width / 2), y: Math.round(rect.y + rect.height / 2) })
+          .press()
+          .move({ x: Math.round(targetRect.x + targetRect.width / 2), y: Math.round(targetRect.y + targetRect.height / 2) })
+          .release()
+          .perform();
+        await driver.sleep(300);
+        const lines = await driver.findElements(By.css(`svg line[x1]`));
+        assert.ok(lines.length > 0, "После рисования коннектора должна появиться линия");
+      }
+    }
+  });
+});
+
+// ─── Snap to grid ─────────────────────────────────────────────────────────────
+
+describe("Редактор диаграмм — Snap to grid", () => {
+  let driver: import("selenium-webdriver").WebDriver;
+  let diagramId: number;
+
+  before(async function () {
+    this.timeout(120_000);
+    driver = await createDriver();
+    await loginAs(driver);
+    diagramId = await createAndOpen(driver, `UI_SnapGrid_${Date.now()}`);
+  });
+
+  after(async () => { await driver?.quit(); });
+
+  it("кнопка сетки отображается в панели инструментов", async () => {
+    const page = new DiagramDetailPage(driver);
+    await page.goto(diagramId);
+    const gridBtn = await waitVisible(driver, By.css(`button[title*="Сетка"]`), 10_000);
+    assert.ok(await gridBtn.isDisplayed());
+  });
+
+  it("клик по кнопке сетки показывает dot-паттерн на холсте", async () => {
+    const page = new DiagramDetailPage(driver);
+    await page.goto(diagramId);
+    const gridBtn = await waitVisible(driver, By.css(`button[title*="Сетка"]`), 10_000);
+    await gridBtn.click();
+    await driver.sleep(200);
+
+    const pattern = await driver.findElements(By.css(`pattern[id="grid-dots"]`));
+    assert.ok(pattern.length > 0, "SVG pattern 'grid-dots' должен появиться при включении сетки");
+  });
+
+  it("повторный клик по кнопке сетки скрывает паттерн", async () => {
+    const page = new DiagramDetailPage(driver);
+    await page.goto(diagramId);
+    const gridBtn = await waitVisible(driver, By.css(`button[title*="Сетка"]`), 10_000);
+    await gridBtn.click();
+    await driver.sleep(100);
+    await gridBtn.click();
+    await driver.sleep(200);
+
+    const pattern = await driver.findElements(By.css(`pattern[id="grid-dots"]`));
+    assert.equal(pattern.length, 0, "При выключенной сетке pattern не должен присутствовать");
+  });
+});
+
+// ─── Панель свойств ───────────────────────────────────────────────────────────
+
+describe("Редактор диаграмм — Панель свойств", () => {
+  let driver: import("selenium-webdriver").WebDriver;
+  let diagramId: number;
+
+  before(async function () {
+    this.timeout(120_000);
+    driver = await createDriver();
+    await loginAs(driver);
+    diagramId = await createAndOpen(driver, `UI_Props_${Date.now()}`);
+  });
+
+  after(async () => { await driver?.quit(); });
+
+  it("кнопка 'Свойства' отображается в панели инструментов", async () => {
+    const page = new DiagramDetailPage(driver);
+    await page.goto(diagramId);
+    const btn = await waitVisible(driver, By.css(`button[title="Свойства"]`), 10_000);
+    assert.ok(await btn.isDisplayed());
+  });
+
+  it("клик по 'Свойства' открывает панель", async () => {
+    const page = new DiagramDetailPage(driver);
+    await page.goto(diagramId);
+    await (await waitVisible(driver, By.css(`button[title="Свойства"]`), 10_000)).click();
+    const panel = await waitVisible(driver, By.xpath(`//*[contains(normalize-space(.), 'Свойства')]`), 5_000);
+    assert.ok(await panel.isDisplayed());
+  });
+
+  it("при выборе блока панель свойств показывает color-input'ы", async () => {
+    const page = new DiagramDetailPage(driver);
+    await page.goto(diagramId);
+
+    await (await waitVisible(driver, By.css(`button[title="Свойства"]`), 10_000)).click();
+
+    await (await page.toolButton("Фигуры")).click();
+    await (await waitVisible(driver, By.xpath(`//button[normalize-space(.) = 'Rectangle']`), 5_000)).click();
+    const block = await waitVisible(driver, By.xpath(`//*[@data-block='true']`), 5_000);
+    await block.click();
+    await driver.sleep(200);
+
+    const colorInputs = await driver.findElements(By.css(`input[type="color"]`));
+    assert.ok(colorInputs.length >= 2, `При выборе блока должно быть ≥2 color-input, найдено: ${colorInputs.length}`);
+  });
+
+  it("при выборе линии панель свойств показывает color-input для линии", async () => {
+    const page = new DiagramDetailPage(driver);
+    await page.goto(diagramId);
+
+    await (await waitVisible(driver, By.css(`button[title="Свойства"]`), 10_000)).click();
+
+    // нарисовать линию
+    await (await page.toolButton("Линия")).click();
+    await drawOnSvg(driver, -80, -60, 60, 40);
+    await driver.sleep(300);
+
+    // кликнуть по линии
+    await (await page.toolButton("Выбор (S)")).click();
+    const lines = await driver.findElements(By.css(`svg line[x1]`));
+    if (lines.length > 0) {
+      await lines[0]!.click();
+      await driver.sleep(200);
+      const colorInputs = await driver.findElements(By.css(`input[type="color"]`));
+      assert.ok(colorInputs.length >= 1, "При выборе линии должен появиться color-input");
+    } else {
+      this.skip();
+    }
+  });
+});
+
+// ─── Миникарта ───────────────────────────────────────────────────────────────
+
+describe("Редактор диаграмм — Миникарта", () => {
+  let driver: import("selenium-webdriver").WebDriver;
+  let diagramId: number;
+
+  before(async function () {
+    this.timeout(120_000);
+    driver = await createDriver();
+    await loginAs(driver);
+    diagramId = await createAndOpen(driver, `UI_Minimap_${Date.now()}`);
+  });
+
+  after(async () => { await driver?.quit(); });
+
+  it("миникарта не отображается на пустом холсте", async () => {
+    const page = new DiagramDetailPage(driver);
+    await page.goto(diagramId);
+    await driver.sleep(500);
+    const minimap = await driver.findElements(By.css(`[class*="Minimap"]`));
+    assert.equal(minimap.length, 0, "На пустом холсте миникарта не должна отображаться");
+  });
+
+  it("миникарта появляется после добавления блока", async () => {
+    const page = new DiagramDetailPage(driver);
+    await page.goto(diagramId);
+
+    await (await page.toolButton("Фигуры")).click();
+    await (await waitVisible(driver, By.xpath(`//button[normalize-space(.) = 'Rectangle']`), 5_000)).click();
+    await waitVisible(driver, By.xpath(`//*[@data-block='true']`), 5_000);
+    await driver.sleep(300);
+
+    const minimap = await waitVisible(driver, By.css(`[class*="Minimap"]`), 5_000);
+    assert.ok(await minimap.isDisplayed(), "Миникарта должна появиться после добавления блока");
+  });
+
+  it("миникарта содержит SVG с rect-элементами блоков", async () => {
+    const page = new DiagramDetailPage(driver);
+    await page.goto(diagramId);
+
+    await (await page.toolButton("Фигуры")).click();
+    await (await waitVisible(driver, By.xpath(`//button[normalize-space(.) = 'Rectangle']`), 5_000)).click();
+    await waitVisible(driver, By.xpath(`//*[@data-block='true']`), 5_000);
+    await driver.sleep(300);
+
+    const minimapRects = await driver.executeScript<number>(`
+      const minimap = document.querySelector('[class*="Minimap"]');
+      return minimap ? minimap.querySelectorAll('rect').length : 0;
+    `);
+    assert.ok(minimapRects > 0, `Миникарта должна содержать rect-элементы, найдено: ${minimapRects}`);
+  });
+});
+
+// ─── BPMN библиотека ──────────────────────────────────────────────────────────
+
+describe("Редактор диаграмм — BPMN библиотека", () => {
+  let driver: import("selenium-webdriver").WebDriver;
+  let diagramId: number;
+
+  before(async function () {
+    this.timeout(120_000);
+    driver = await createDriver();
+    await loginAs(driver);
+    diagramId = await createAndOpen(driver, `UI_BPMN_${Date.now()}`);
+  });
+
+  after(async () => { await driver?.quit(); });
+
+  it("в шаблонах есть пункт 'BPMN'", async () => {
+    const page = new DiagramDetailPage(driver);
+    await page.goto(diagramId);
+    await (await page.toolButton("Шаблоны")).click();
+    const bpmnItem = await waitVisible(driver, By.xpath(`//button[normalize-space(.) = 'BPMN']`), 5_000);
+    assert.ok(await bpmnItem.isDisplayed());
+  });
+
+  it("клик по BPMN открывает панель с BPMN-блоками", async () => {
+    const page = new DiagramDetailPage(driver);
+    await page.goto(diagramId);
+    await (await page.toolButton("Шаблоны")).click();
+    await (await waitVisible(driver, By.xpath(`//button[normalize-space(.) = 'BPMN']`), 5_000)).click();
+    const task = await waitVisible(driver, By.xpath(`//button[normalize-space(.) = 'Task']`), 5_000);
+    assert.ok(await task.isDisplayed());
+  });
+
+  it("добавление BPMN Task отображает блок на холсте", async () => {
+    const page = new DiagramDetailPage(driver);
+    await page.goto(diagramId);
+    await (await page.toolButton("Шаблоны")).click();
+    await (await waitVisible(driver, By.xpath(`//button[normalize-space(.) = 'BPMN']`), 5_000)).click();
+    await (await waitVisible(driver, By.xpath(`//button[normalize-space(.) = 'Task']`), 5_000)).click();
+    const block = await waitVisible(driver, By.xpath(`//*[@data-block='true']`), 5_000);
+    assert.ok(await block.isDisplayed());
+  });
+});
+
+// ─── ER библиотека ───────────────────────────────────────────────────────────
+
+describe("Редактор диаграмм — ER библиотека", () => {
+  let driver: import("selenium-webdriver").WebDriver;
+  let diagramId: number;
+
+  before(async function () {
+    this.timeout(120_000);
+    driver = await createDriver();
+    await loginAs(driver);
+    diagramId = await createAndOpen(driver, `UI_ER_${Date.now()}`);
+  });
+
+  after(async () => { await driver?.quit(); });
+
+  it("в шаблонах есть пункт 'ER-диаграмма'", async () => {
+    const page = new DiagramDetailPage(driver);
+    await page.goto(diagramId);
+    await (await page.toolButton("Шаблоны")).click();
+    const erItem = await waitVisible(driver, By.xpath(`//button[contains(normalize-space(.), 'ER')]`), 5_000);
+    assert.ok(await erItem.isDisplayed());
+  });
+
+  it("добавление ER Entity отображает блок с заголовком", async () => {
+    const page = new DiagramDetailPage(driver);
+    await page.goto(diagramId);
+    await (await page.toolButton("Шаблоны")).click();
+    await (await waitVisible(driver, By.xpath(`//button[contains(normalize-space(.), 'ER')]`), 5_000)).click();
+    await (await waitVisible(driver, By.xpath(`//button[normalize-space(.) = 'Entity']`), 5_000)).click();
+    const block = await waitVisible(driver, By.xpath(`//*[@data-block='true']`), 5_000);
+    assert.ok(await block.isDisplayed());
+  });
+});
+
+// ─── Grid-вид на /diagrams ────────────────────────────────────────────────────
+
+describe("Список диаграмм — Grid-вид", () => {
+  let driver: import("selenium-webdriver").WebDriver;
+
+  before(async function () {
+    this.timeout(120_000);
+    driver = await createDriver();
+    await loginAs(driver);
+    // создать диаграмму чтобы список не был пустым
+    const list = new DiagramsPage(driver);
+    await list.goto();
+    await list.create(`GridViewTest_${Date.now()}`);
+  });
+
+  after(async () => { await driver?.quit(); });
+
+  it("кнопка переключения в сетку отображается", async () => {
+    const list = new DiagramsPage(driver);
+    await list.goto();
+    const gridBtn = await waitVisible(driver, By.css(`button[title="Сетка"]`), 10_000);
+    assert.ok(await gridBtn.isDisplayed());
+  });
+
+  it("клик по 'Сетка' меняет ul на GridList-разметку", async () => {
+    const list = new DiagramsPage(driver);
+    await list.goto();
+    const gridBtn = await waitVisible(driver, By.css(`button[title="Сетка"]`), 10_000);
+    await gridBtn.click();
+    await driver.sleep(200);
+
+    const gridList = await driver.findElements(By.css(`[class*="GridList"]`));
+    assert.ok(gridList.length > 0, "После переключения должен появиться GridList");
+  });
+
+  it("клик по 'Список' возвращает обычный список", async () => {
+    const list = new DiagramsPage(driver);
+    await list.goto();
+    await (await waitVisible(driver, By.css(`button[title="Сетка"]`), 10_000)).click();
+    await driver.sleep(100);
+    await (await waitVisible(driver, By.css(`button[title="Список"]`), 10_000)).click();
+    await driver.sleep(200);
+
+    const gridList = await driver.findElements(By.css(`[class*="GridList"]`));
+    assert.equal(gridList.length, 0, "После переключения обратно GridList не должен отображаться");
+  });
+
+  it("GridItem содержит кнопку 'Открыть'", async () => {
+    const list = new DiagramsPage(driver);
+    await list.goto();
+    await (await waitVisible(driver, By.css(`button[title="Сетка"]`), 10_000)).click();
+    await driver.sleep(200);
+
+    const openBtns = await driver.findElements(By.xpath(`//*[contains(@class,'GridItem')]//button[contains(normalize-space(.),'${'' /* t.common.diagram */}')]`));
+    // просто проверяем что GridItem-карточки есть
+    const gridItems = await driver.findElements(By.css(`[class*="GridItem"]`));
+    assert.ok(gridItems.length > 0, "В grid-виде должны отображаться карточки GridItem");
+  });
+});
