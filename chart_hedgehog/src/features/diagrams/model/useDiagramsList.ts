@@ -7,16 +7,18 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { fetchCurrentUser } from '@/features/profile/api/profile';
 import { useLocale } from '@/shared/i18n';
+import { useToast } from '@/shared/toast';
 
-import { createDiagram, fetchMyDiagrams } from '../api/diagrams';
+import { cloneDiagram, createDiagram, fetchMyDiagrams } from '../api/diagrams';
 
 export function useDiagramsList() {
     const router = useRouter();
     const queryClient = useQueryClient();
     const { t } = useLocale();
+    const toast = useToast();
     const [newName, setNewName] = useState('');
     const [isCreating, setIsCreating] = useState(false);
-    const [createError, setCreateError] = useState<string | null>(null);
+    const [cloningId, setCloningId] = useState<number | null>(null);
 
     const currentUserQuery = useQuery({
         queryKey: ['currentUser'],
@@ -52,23 +54,33 @@ export function useDiagramsList() {
     const handleCreate = async () => {
         const name = newName.trim();
         if (!name) {
-            setCreateError(t.diagrams.enterDiagramName);
+            toast.error(t.diagrams.enterDiagramName);
             return;
         }
 
         setIsCreating(true);
-        setCreateError(null);
-
         try {
             await createDiagram(name);
             setNewName('');
             await queryClient.invalidateQueries({ queryKey: ['myDiagrams'] });
+            toast.success('Диаграмма создана');
         } catch (err) {
-            setCreateError(
-                err instanceof Error ? err.message : t.diagrams.createError,
-            );
+            toast.error(err instanceof Error ? err.message : t.diagrams.createError);
         } finally {
             setIsCreating(false);
+        }
+    };
+
+    const handleClone = async (id: number) => {
+        setCloningId(id);
+        try {
+            await cloneDiagram(id);
+            await queryClient.invalidateQueries({ queryKey: ['myDiagrams'] });
+            toast.success('Диаграмма скопирована');
+        } catch (err) {
+            toast.error(err instanceof Error ? err.message : 'Не удалось скопировать');
+        } finally {
+            setCloningId(null);
         }
     };
 
@@ -79,7 +91,8 @@ export function useDiagramsList() {
         newName,
         setNewName,
         isCreating,
-        createError,
         handleCreate,
+        cloningId,
+        handleClone,
     };
 }

@@ -141,6 +141,30 @@ export async function deleteDiagram(id: number): Promise<void> {
     saveStoredDiagrams(getStoredDiagrams().filter((d) => d.id !== id));
 }
 
+export async function cloneDiagram(id: number): Promise<DiagramSummary> {
+    const user = getSessionUser();
+    if (!user) throw new Error('Не авторизован');
+
+    const source = getDiagramById(id);
+    if (!source) throw new Error('Диаграмма не найдена');
+
+    const stored = getStoredDiagrams();
+    const now = new Date().toISOString();
+    const clone: StoredDiagram = {
+        ...source,
+        id: nextDiagramId(stored),
+        name: `${source.name} (копия)`,
+        createdAt: now,
+        updatedAt: now,
+        ownerUsername: user.username,
+        ownerId: user.id,
+        participantRoles: [],
+    };
+
+    saveStoredDiagrams([clone, ...stored]);
+    return mapDiagramToSummary(toApiDiagram(clone), user.username);
+}
+
 export function getDiagramById(id: number): StoredDiagram | null {
     return getStoredDiagrams().find((d) => d.id === id) ?? null;
 }

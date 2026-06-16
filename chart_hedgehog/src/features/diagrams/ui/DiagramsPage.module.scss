@@ -98,6 +98,39 @@
     margin-top: 8px;
 }
 
+// ── Controls (search + sort + filter) ─────────────────────────────────────────
+
+.Controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: flex-end;
+    margin-bottom: 16px;
+}
+
+.SearchWrap {
+    flex: 1;
+    min-width: 180px;
+}
+
+.SortSelect {
+    height: 40px;
+    padding: 0 10px;
+    font-size: 14px;
+    color: var(--text-color);
+    cursor: pointer;
+    outline: none;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    transition: border-color 0.15s;
+
+    &:focus,
+    &:hover {
+        border-color: var(--primary);
+    }
+}
+
 @media (width >= 600px) {
     .CreateRow {
         flex-direction: row;

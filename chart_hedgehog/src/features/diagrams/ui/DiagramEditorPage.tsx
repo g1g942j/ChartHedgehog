@@ -24,9 +24,11 @@ import type { DragEvent, PointerEvent as ReactPointerEvent } from 'react';
 
 import { useLocale } from '@/shared/i18n';
 import { useThemeMode } from '@/shared/theme';
+import { useToast } from '@/shared/toast';
 import { Alert } from '@/shared/ui/Alert';
 import { Button } from '@/shared/ui/Button';
 import { Select, type SelectOption } from '@/shared/ui/Select';
+import { Skeleton } from '@/shared/ui/Skeleton';
 import { TextField } from '@/shared/ui/TextField';
 import { Typography } from '@/shared/ui/Typography';
 
@@ -150,6 +152,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
     const { diagramId, diagramName, currentUserRole, initialEditorState } = props;
     const { t } = useLocale();
     const { mode, toggleMode } = useThemeMode();
+    const toast = useToast();
     const router = useRouter();
     const queryClient = useQueryClient();
     const canvasRef = useRef<HTMLDivElement | null>(null);
@@ -192,7 +195,6 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
     const [renaming, setRenaming] = useState(diagramName);
     const [isRenaming, setIsRenaming] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
-    const [settingsError, setSettingsError] = useState<string | null>(null);
     const [isPublic, setIsPublic] = useState(false);
     const [linkCopied, setLinkCopied] = useState(false);
 
@@ -651,26 +653,27 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
 
     // ── rename / delete ───────────────────────────────────────────────────────
     const handleRename = async () => {
-        setIsRenaming(true); setSettingsError(null);
+        setIsRenaming(true);
         try {
             await updateDiagramName(diagramId, renaming);
             await queryClient.invalidateQueries({ queryKey: ['diagram', diagramId] });
             await queryClient.invalidateQueries({ queryKey: ['myDiagrams'] });
+            toast.success('Название сохранено');
             setMenuOpen(false);
         } catch (err) {
-            setSettingsError(err instanceof Error ? err.message : t.diagrams.updateError);
+            toast.error(err instanceof Error ? err.message : t.diagrams.updateError);
         } finally { setIsRenaming(false); }
     };
 
     const handleDelete = async () => {
         if (!window.confirm(t.diagrams.deleteConfirm(renaming))) return;
-        setIsDeleting(true); setSettingsError(null);
+        setIsDeleting(true);
         try {
             await deleteDiagram(diagramId);
             await queryClient.invalidateQueries({ queryKey: ['myDiagrams'] });
             router.replace('/diagrams');
         } catch (err) {
-            setSettingsError(err instanceof Error ? err.message : t.diagrams.deleteError);
+            toast.error(err instanceof Error ? err.message : t.diagrams.deleteError);
             setIsDeleting(false);
         }
     };
@@ -762,10 +765,6 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                         <Typography variant="subtitle2" style={{ marginBottom: 12 }}>
                             {t.diagrams.settingsTitle}
                         </Typography>
-                        {settingsError ? (
-                            <Alert severity="error" style={{ marginBottom: 8 }}>{settingsError}</Alert>
-                        ) : null}
-
                         {canEdit ? (
                             <div className={styles.SettingsRow}>
                                 <TextField
@@ -1187,8 +1186,17 @@ export function DiagramEditorLoader(props: DiagramEditorLoaderProps) {
 
     if (q.isPending) {
         return (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
-                <Typography color="text.secondary">{t.common.loading}</Typography>
+            <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
+                <div style={{ height: 48, display: 'flex', alignItems: 'center', gap: 8, padding: '0 12px', borderBottom: '1px solid var(--border)', background: 'var(--surface)' }}>
+                    <Skeleton width={32} height={32} borderRadius={8} />
+                    <Skeleton width={160} height={18} />
+                </div>
+                <div style={{ display: 'flex', flex: 1 }}>
+                    <div style={{ width: 52, borderRight: '1px solid var(--border)', background: 'var(--surface)', display: 'flex', flexDirection: 'column', gap: 8, padding: 8 }}>
+                        {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} width={36} height={36} borderRadius={10} />)}
+                    </div>
+                    <div style={{ flex: 1, background: 'var(--bg-soft)' }} />
+                </div>
             </div>
         );
     }

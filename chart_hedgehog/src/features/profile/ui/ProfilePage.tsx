@@ -5,8 +5,10 @@ import { useRouter } from 'next/navigation';
 
 import { AppNavbar } from '@/widgets/AppNavbar';
 import { useLocale } from '@/shared/i18n';
+import { useToast } from '@/shared/toast';
 import { Alert } from '@/shared/ui/Alert';
 import { Button } from '@/shared/ui/Button';
+import { Skeleton } from '@/shared/ui/Skeleton';
 import { TextField } from '@/shared/ui/TextField';
 import { Typography } from '@/shared/ui/Typography';
 
@@ -40,11 +42,10 @@ export function ProfilePage() {
     const setEmail = (v: string) => setEmailDraft(v);
     const setFullName = (v: string) => setFullNameDraft(v);
 
+    const toast = useToast();
     const [oldPassword, setOldPassword] = useState('');
     const [newPassword, setNewPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
-    const [profileSuccess, setProfileSuccess] = useState<string | null>(null);
-    const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null);
     const [passwordValidationError, setPasswordValidationError] = useState<
         string | null
     >(null);
@@ -58,13 +59,12 @@ export function ProfilePage() {
     const handleProfileSubmit = async (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
         resetUpdateProfile();
-        setProfileSuccess(null);
 
         try {
             await updateProfile({ email, fullName });
             setEmailDraft(null);
             setFullNameDraft(null);
-            setProfileSuccess(t.profile.profileSaved);
+            toast.success(t.profile.profileSaved);
         } catch {
             // Ошибка уже доступна через состояние mutation.
         }
@@ -73,7 +73,6 @@ export function ProfilePage() {
     const handlePasswordSubmit = async (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
         resetChangePassword();
-        setPasswordSuccess(null);
         setPasswordValidationError(null);
 
         if (newPassword !== confirmPassword) {
@@ -86,7 +85,7 @@ export function ProfilePage() {
             setOldPassword('');
             setNewPassword('');
             setConfirmPassword('');
-            setPasswordSuccess(t.profile.passwordChanged);
+            toast.success(t.profile.passwordChanged);
         } catch {
             // Ошибка уже доступна через состояние mutation.
         }
@@ -107,9 +106,26 @@ export function ProfilePage() {
 
     if (isLoadingProfile) {
         return (
-            <main className={styles.Page}>
-                <Typography>{t.common.loading}</Typography>
-            </main>
+            <>
+                <AppNavbar />
+                <main className={styles.Page}>
+                    <Skeleton width={200} height={32} />
+                    <div className={styles.ProfileGrid}>
+                        <div className={styles.Card} style={{ gap: 16 }}>
+                            <Skeleton width={140} height={20} />
+                            <Skeleton height={40} borderRadius={8} />
+                            <Skeleton height={40} borderRadius={8} />
+                            <Skeleton height={40} borderRadius={8} />
+                        </div>
+                        <div className={styles.Card} style={{ gap: 16 }}>
+                            <Skeleton width={160} height={20} />
+                            <Skeleton height={40} borderRadius={8} />
+                            <Skeleton height={40} borderRadius={8} />
+                            <Skeleton height={40} borderRadius={8} />
+                        </div>
+                    </div>
+                </main>
+            </>
         );
     }
 
@@ -132,9 +148,6 @@ export function ProfilePage() {
                         <Typography variant="subtitle1">
                             {t.profile.accountData}
                         </Typography>
-                        {profileSuccess ? (
-                            <Alert severity="success">{profileSuccess}</Alert>
-                        ) : null}
                         {updateProfileError ? (
                             <Alert severity="error">{updateProfileError}</Alert>
                         ) : null}
@@ -179,9 +192,6 @@ export function ProfilePage() {
                         <Typography variant="subtitle1">
                             {t.profile.passwordTitle}
                         </Typography>
-                        {passwordSuccess ? (
-                            <Alert severity="success">{passwordSuccess}</Alert>
-                        ) : null}
                         {passwordValidationError || changePasswordError ? (
                             <Alert severity="error">
                                 {passwordValidationError ?? changePasswordError}

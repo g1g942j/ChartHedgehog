@@ -4,6 +4,7 @@ export type { ButtonProps } from './Button';
 export { Button } from './Button';
 export type { SelectOption, SelectProps } from './Select';
 export { Select } from './Select';
+export { Skeleton } from './Skeleton';
 export type { TextFieldProps } from './TextField';
 export { TextField } from './TextField';
 export type { TypographyProps } from './Typography';

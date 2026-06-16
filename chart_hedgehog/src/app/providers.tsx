@@ -8,6 +8,7 @@ import type { PropsWithChildren } from 'react';
 
 import { LocaleProvider } from '@/shared/i18n';
 import { ThemeModeProvider } from '@/shared/theme';
+import { ToastProvider } from '@/shared/toast';
 
 import '@fontsource/roboto/300.css';
 import '@fontsource/roboto/400.css';
@@ -29,7 +30,9 @@ export function AppProviders({ children }: PropsWithChildren) {
     return (
         <QueryClientProvider client={queryClient}>
             <LocaleProvider>
-                <ThemeModeProvider>{children}</ThemeModeProvider>
+                <ThemeModeProvider>
+                    <ToastProvider>{children}</ToastProvider>
+                </ThemeModeProvider>
             </LocaleProvider>
         </QueryClientProvider>
     );
