@@ -18,6 +18,7 @@ import GestureOutlinedIcon from '@mui/icons-material/GestureOutlined';
 import GroupsOutlinedIcon from '@mui/icons-material/GroupsOutlined';
 import MoreVertOutlinedIcon from '@mui/icons-material/MoreVertOutlined';
 import NearMeOutlinedIcon from '@mui/icons-material/NearMeOutlined';
+import PanToolOutlinedIcon from '@mui/icons-material/PanToolOutlined';
 import TableChartOutlinedIcon from '@mui/icons-material/TableChartOutlined';
 import TimelineOutlinedIcon from '@mui/icons-material/TimelineOutlined';
 
@@ -50,7 +51,7 @@ import { deleteDiagram, updateDiagramName } from '../api/diagrams';
 
 // ─── types ───────────────────────────────────────────────────────────────────
 
-type DrawingTool = 'select' | 'eraser' | 'pencil' | 'line';
+type DrawingTool = 'select' | 'pan' | 'eraser' | 'pencil' | 'line';
 type LeftPanel = 'none' | 'shapes' | 'uml' | 'line-config' | 'templates';
 type EditingBlock = { id: string; title: string; body: string };
 type ExportFormat = 'json' | 'png' | 'jpeg' | 'pdf';
@@ -167,6 +168,8 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
     const [activeLineCurrent, setActiveLineCurrent] = useState<{ x: number; y: number } | null>(null);
     const activePencilRef = useRef<{ id: string; points: [number, number][] } | null>(null);
     const [pencilPreview, setPencilPreview] = useState<[number, number][]>([]);
+    const panRef = useRef<{ startX: number; startY: number; scrollLeft: number; scrollTop: number } | null>(null);
+    const [isPanning, setIsPanning] = useState(false);
 
     // ── UI panels ─────────────────────────────────────────────────────────────
     const [leftPanel, setLeftPanel] = useState<LeftPanel>('none');
@@ -207,6 +210,27 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
             x: (clientX - r.left + el.scrollLeft) / zoom,
             y: (clientY - r.top + el.scrollTop) / zoom,
         };
+    };
+
+    // ── pan handlers ──────────────────────────────────────────────────────────
+    const onCanvasPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+        if (tool !== 'pan') return;
+        const el = canvasRef.current;
+        if (!el) return;
+        e.currentTarget.setPointerCapture(e.pointerId);
+        panRef.current = { startX: e.clientX, startY: e.clientY, scrollLeft: el.scrollLeft, scrollTop: el.scrollTop };
+        setIsPanning(true);
+    };
+    const onCanvasPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+        if (tool !== 'pan' || !panRef.current) return;
+        const el = canvasRef.current;
+        if (!el) return;
+        el.scrollLeft = panRef.current.scrollLeft - (e.clientX - panRef.current.startX);
+        el.scrollTop = panRef.current.scrollTop - (e.clientY - panRef.current.startY);
+    };
+    const onCanvasPointerUp = () => {
+        panRef.current = null;
+        setIsPanning(false);
     };
 
     // ── element helpers ───────────────────────────────────────────────────────
@@ -255,6 +279,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
 
     // ── block pointer events ──────────────────────────────────────────────────
     const onBlockPointerDown = (e: ReactPointerEvent<HTMLDivElement>, block: DiagramCanvasBlock) => {
+        if (tool === 'pan') return;
         if (!canEdit || editing?.id === block.id) return;
         if (tool === 'eraser') { removeEl(block.id); return; }
         if (tool !== 'select') return;
@@ -497,6 +522,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
     );
 
     const isDrawing = tool === 'line' || tool === 'pencil';
+    const isPanTool = tool === 'pan';
 
     // ─────────────────────────────────────────────────────────────────────────
     return (
@@ -660,6 +686,15 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                         <NearMeOutlinedIcon fontSize="small" />
                     </button>
 
+                    <button
+                        type="button"
+                        title="Перемещение по холсту"
+                        className={`${styles.ToolBtn} ${tool === 'pan' ? styles.ToolBtn_active : ''}`}
+                        onClick={() => selectTool('pan')}
+                    >
+                        <PanToolOutlinedIcon fontSize="small" />
+                    </button>
+
                     {canEdit ? (
                         <>
                             <button
@@ -788,9 +823,12 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
 
                 <div
                     ref={canvasRef}
-                    className={`${styles.Canvas} ${isDrawing ? styles.Canvas_drawing : ''} ${tool === 'eraser' ? styles.Canvas_eraser : ''}`}
+                    className={`${styles.Canvas} ${isDrawing ? styles.Canvas_drawing : ''} ${tool === 'eraser' ? styles.Canvas_eraser : ''} ${tool === 'pan' ? (isPanning ? styles.Canvas_grabbing : styles.Canvas_pan) : ''}`}
                     onDragOver={(e) => e.preventDefault()}
                     onDrop={onDrop}
+                    onPointerDown={onCanvasPointerDown}
+                    onPointerMove={onCanvasPointerMove}
+                    onPointerUp={onCanvasPointerUp}
                 >
                     <div ref={canvasContentRef} className={styles.CanvasContent} style={{ transform: `scale(${zoom})` }}>
 
