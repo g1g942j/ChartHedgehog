@@ -111,8 +111,7 @@
 						<suppressionFile>dependency-check-suppressions.xml</suppressionFile>
 					</suppressionFiles>
 					<nvdApiKey>${env.NVD_API_KEY}</nvdApiKey>
-					<ossIndexUsername>${env.OSSINDEX_USERNAME}</ossIndexUsername>
-					<ossIndexPassword>${env.OSSINDEX_TOKEN}</ossIndexPassword>
+					<propertiesFilePath>${project.basedir}/dependency-check.properties</propertiesFilePath>
 				</configuration>
 			</plugin>
 			<plugin>
