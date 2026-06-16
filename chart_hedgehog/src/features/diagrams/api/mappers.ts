@@ -1,17 +1,49 @@
+import type { StoredDiagram } from '@/shared/auth/session';
+
 import type { DiagramDetail } from './diagramDetail';
 import type { DiagramSummary } from './diagrams';
 import type { DiagramParticipant } from './participants';
 import type { ApiDiagram } from './types';
 
+// Единственный маппер StoredDiagram → ApiDiagram (используется в diagrams.ts и diagramDetail.ts)
+export function toApiDiagram(stored: StoredDiagram): ApiDiagram {
+    return {
+        id: stored.id,
+        name: stored.name,
+        description: stored.description,
+        createdAt: stored.createdAt,
+        updatedAt: stored.updatedAt,
+        template: stored.template,
+        content: stored.content,
+        owner: {
+            id: stored.ownerId,
+            username: stored.ownerUsername,
+            email: `${stored.ownerUsername}@local.dev`,
+            fullName: stored.ownerUsername,
+        },
+        participants: stored.participantRoles.map((p) => ({
+            id: p.userId,
+            username: p.username,
+            email: p.email,
+            fullName: p.fullName,
+        })),
+        participantRoles: stored.participantRoles.map((p) => ({
+            user: {
+                id: p.userId,
+                username: p.username,
+                email: p.email,
+                fullName: p.fullName,
+            },
+            role: p.role,
+        })),
+    };
+}
+
 export function resolveUserRole(
     diagram: ApiDiagram,
     currentUsername: string | undefined,
 ): string {
-    if (!currentUsername) {
-        return 'VIEWER';
-    }
-
-    if (!diagram.owner) {
+    if (!currentUsername || !diagram.owner) {
         return 'VIEWER';
     }
 
@@ -23,17 +55,10 @@ export function resolveUserRole(
         (entry) => entry.user?.username === currentUsername,
     );
 
-    if (link) {
-        return link.role;
-    }
-
-    const isParticipant = diagram.participants?.some(
-        (user) => user.username === currentUsername,
-    );
-
-    return isParticipant ? 'VIEWER' : 'VIEWER';
+    return link?.role ?? 'VIEWER';
 }
 
+// Проверяет наличие доступа по participantRoles (авторитетный источник ролей)
 export function userHasAccess(
     diagram: ApiDiagram,
     currentUsername: string | undefined,
@@ -47,8 +72,9 @@ export function userHasAccess(
     }
 
     return (
-        diagram.participants?.some((user) => user.username === currentUsername) ??
-        false
+        diagram.participantRoles?.some(
+            (entry) => entry.user?.username === currentUsername,
+        ) ?? false
     );
 }
 

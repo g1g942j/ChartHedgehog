@@ -74,9 +74,11 @@ export async function deactivateCurrentUser(): Promise<string> {
     }
 
     clearSession();
+    document.cookie = 'ch_auth=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
     return 'Аккаунт удален';
 }
 
 export async function logoutUser(): Promise<void> {
     clearSession();
+    document.cookie = 'ch_auth=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
 }

@@ -60,15 +60,14 @@ export async function fetchDiagramParticipants(
 ): Promise<DiagramParticipant[]> {
     const diagram = await fetchDiagramEntity(diagramId);
 
-    if (
-        currentUsername &&
-        diagram.owner?.username !== currentUsername
-    ) {
-        const hasAccess = diagram.participants?.some(
-            (user) => user.username === currentUsername,
-        );
-        if (!hasAccess) {
-            throw new Error('Нет доступа к диаграмме');
+    if (currentUsername) {
+        const isOwner = diagram.owner?.username === currentUsername;
+        const participantRole = diagram.participantRoles?.find(
+            (entry) => entry.user?.username === currentUsername,
+        )?.role;
+
+        if (!isOwner && participantRole !== 'EDITOR') {
+            throw new Error('Недостаточно прав для просмотра участников');
         }
     }
 
@@ -151,6 +150,10 @@ export async function updateDiagramParticipantRole(
         stored.updatedAt = new Date().toISOString();
         updateStoredDiagram(stored);
         return;
+    }
+
+    if (!currentUser || stored.ownerId !== currentUser.id) {
+        throw new Error('Только владелец может изменять роли участников');
     }
 
     if (stored.ownerId === userId) {

@@ -68,7 +68,9 @@ export async function loginUser(data: {
         role: me.role,
         fullName: me.fullName,
     });
- 
+
+    document.cookie = 'ch_auth=1; path=/; SameSite=Lax';
+
     return {
         message: 'Вход выполнен',
         username: me.username,

@@ -6,8 +6,7 @@ import {
     type StoredDiagram,
 } from '@/shared/auth/session';
 
-import { mapDiagramToSummary, userHasAccess } from './mappers';
-import type { ApiDiagram } from './types';
+import { mapDiagramToSummary, toApiDiagram, userHasAccess } from './mappers';
 
 export type DiagramSummary = {
     id: number;
@@ -18,39 +17,6 @@ export type DiagramSummary = {
     ownerUsername: string;
     role: string;
 };
-
-function toApiDiagram(stored: StoredDiagram): ApiDiagram {
-    return {
-        id: stored.id,
-        name: stored.name,
-        description: stored.description,
-        createdAt: stored.createdAt,
-        updatedAt: stored.updatedAt,
-        template: stored.template,
-        content: stored.content,
-        owner: {
-            id: stored.ownerId,
-            username: stored.ownerUsername,
-            email: `${stored.ownerUsername}@local.dev`,
-            fullName: stored.ownerUsername,
-        },
-        participants: stored.participantRoles.map((p) => ({
-            id: p.userId,
-            username: p.username,
-            email: p.email,
-            fullName: p.fullName,
-        })),
-        participantRoles: stored.participantRoles.map((p) => ({
-            user: {
-                id: p.userId,
-                username: p.username,
-                email: p.email,
-                fullName: p.fullName,
-            },
-            role: p.role,
-        })),
-    };
-}
 
 export async function fetchMyDiagrams(
     currentUsername?: string,

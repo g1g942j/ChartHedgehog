@@ -1,3 +1,5 @@
+import { getSessionUser } from '@/shared/auth/session';
+
 import { getDiagramById, updateStoredDiagram } from './diagrams';
 
 export type DiagramBlockType =
@@ -257,13 +259,23 @@ function parseElements(content?: string | null): DiagramElement[] {
     return [];
 }
 
+function getCallerRole(diagramId: number): { role: string; diagram: NonNullable<ReturnType<typeof getDiagramById>> } {
+    const user = getSessionUser();
+    if (!user) throw new Error('Не авторизован');
+
+    const diagram = getDiagramById(diagramId);
+    if (!diagram) throw new Error('Диаграмма не найдена');
+
+    if (diagram.ownerId === user.id) return { role: 'OWNER', diagram };
+    const p = diagram.participantRoles.find((r) => r.userId === user.id);
+    if (!p) throw new Error('Нет доступа к диаграмме');
+    return { role: p.role, diagram };
+}
+
 export async function fetchDiagramEditorState(
     diagramId: number,
 ): Promise<DiagramEditorState> {
-    const diagram = getDiagramById(diagramId);
-    if (!diagram) {
-        throw new Error('Диаграмма не найдена');
-    }
+    const { diagram } = getCallerRole(diagramId);
 
     return {
         template: diagram.template,
@@ -275,9 +287,10 @@ export async function saveDiagramEditorState(
     diagramId: number,
     state: DiagramEditorState,
 ): Promise<void> {
-    const diagram = getDiagramById(diagramId);
-    if (!diagram) {
-        throw new Error('Диаграмма не найдена');
+    const { role, diagram } = getCallerRole(diagramId);
+
+    if (role !== 'OWNER' && role !== 'EDITOR') {
+        throw new Error('Недостаточно прав для редактирования диаграммы');
     }
 
     diagram.template = state.template;
