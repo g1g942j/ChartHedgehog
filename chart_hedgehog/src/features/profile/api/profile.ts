@@ -1,8 +1,8 @@
 import {
     clearSession,
     getSessionUser,
-    setSessionUser,
     type SessionUser,
+    setSessionUser,
 } from '@/shared/auth/session';
 
 export type CurrentUserDto = SessionUser;

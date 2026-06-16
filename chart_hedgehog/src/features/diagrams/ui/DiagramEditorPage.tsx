@@ -1,28 +1,29 @@
 'use client';
 
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { useQueryClient } from '@tanstack/react-query';
-
-import type { DragEvent, PointerEvent as ReactPointerEvent } from 'react';
-
 import ArrowBackOutlinedIcon from '@mui/icons-material/ArrowBackOutlined';
 import BackspaceOutlinedIcon from '@mui/icons-material/BackspaceOutlined';
 import CategoryOutlinedIcon from '@mui/icons-material/CategoryOutlined';
+import DarkModeOutlinedIcon from '@mui/icons-material/DarkModeOutlined';
 import DeleteOutlineOutlinedIcon from '@mui/icons-material/DeleteOutlineOutlined';
-import DriveFileRenameOutlineOutlinedIcon from '@mui/icons-material/DriveFileRenameOutlineOutlined';
 import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
 import GestureOutlinedIcon from '@mui/icons-material/GestureOutlined';
 import GroupsOutlinedIcon from '@mui/icons-material/GroupsOutlined';
+import LightModeOutlinedIcon from '@mui/icons-material/LightModeOutlined';
 import MoreVertOutlinedIcon from '@mui/icons-material/MoreVertOutlined';
 import NearMeOutlinedIcon from '@mui/icons-material/NearMeOutlined';
 import PanToolOutlinedIcon from '@mui/icons-material/PanToolOutlined';
 import TableChartOutlinedIcon from '@mui/icons-material/TableChartOutlined';
 import TimelineOutlinedIcon from '@mui/icons-material/TimelineOutlined';
 
+import type { DragEvent, PointerEvent as ReactPointerEvent } from 'react';
+
 import { useLocale } from '@/shared/i18n';
+import { useThemeMode } from '@/shared/theme';
 import { Alert } from '@/shared/ui/Alert';
 import { Button } from '@/shared/ui/Button';
 import { Select, type SelectOption } from '@/shared/ui/Select';
@@ -39,10 +40,10 @@ import {
     type DiagramElement,
     type DiagramLineElement,
     type DiagramPencilElement,
-    type LineEnding,
-    type LineStyle,
     fetchDiagramEditorState,
     isShapeBlockType,
+    type LineEnding,
+    type LineStyle,
     saveDiagramEditorState,
     SHAPE_BLOCK_TEMPLATES,
     UML_BLOCK_TEMPLATES,
@@ -54,7 +55,12 @@ import { deleteDiagram, updateDiagramName } from '../api/diagrams';
 type DrawingTool = 'select' | 'pan' | 'eraser' | 'pencil' | 'line';
 type LeftPanel = 'none' | 'shapes' | 'uml' | 'line-config' | 'templates';
 type EditingBlock = { id: string; title: string; body: string };
-type ExportFormat = 'json' | 'png' | 'jpeg' | 'pdf';
+type ExportFormat = 'json' | 'svg' | 'png' | 'jpeg' | 'pdf';
+type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
+
+function generateId(prefix: string): string {
+    return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
 
 const ZOOM_STEP = 0.1;
 const ZOOM_MIN = 0.25;
@@ -143,6 +149,7 @@ export type DiagramEditorPageProps = {
 export function DiagramEditorPage(props: DiagramEditorPageProps) {
     const { diagramId, diagramName, currentUserRole, initialEditorState } = props;
     const { t } = useLocale();
+    const { mode, toggleMode } = useThemeMode();
     const router = useRouter();
     const queryClient = useQueryClient();
     const canvasRef = useRef<HTMLDivElement | null>(null);
@@ -155,9 +162,12 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
     const [elements, setElements] = useState<DiagramElement[]>(initialEditorState.blocks);
     const [template, setTemplate] = useState(initialEditorState.template ?? 'uml');
     const [zoom, setZoom] = useState(1);
+    const [panX, setPanX] = useState(40);
+    const [panY, setPanY] = useState(40);
     const [editing, setEditing] = useState<EditingBlock | null>(null);
-    const [isSaving, setIsSaving] = useState(false);
-    const [canvasError, setCanvasError] = useState<string | null>(null);
+    const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
+    const [canvasError] = useState<string | null>(null);
+    const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     // ── drawing state ─────────────────────────────────────────────────────────
     const [tool, setTool] = useState<DrawingTool>('select');
@@ -174,32 +184,79 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
     // ── UI panels ─────────────────────────────────────────────────────────────
     const [leftPanel, setLeftPanel] = useState<LeftPanel>('none');
     const [menuOpen, setMenuOpen] = useState(false);
-    const [templatesOpen, setTemplatesOpen] = useState(false);
     const [exportOpen, setExportOpen] = useState(false);
     const [isExporting, setIsExporting] = useState(false);
+    const [transparentBg, setTransparentBg] = useState(false);
 
     // ── settings form ─────────────────────────────────────────────────────────
     const [renaming, setRenaming] = useState(diagramName);
     const [isRenaming, setIsRenaming] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
     const [settingsError, setSettingsError] = useState<string | null>(null);
+    const [isPublic, setIsPublic] = useState(false);
+    const [linkCopied, setLinkCopied] = useState(false);
 
-    // ── zoom wheel ────────────────────────────────────────────────────────────
+    const shareUrl = typeof window !== 'undefined' ? window.location.href : '';
+    const copyLink = () => {
+        void navigator.clipboard.writeText(shareUrl).then(() => {
+            setLinkCopied(true);
+            setTimeout(() => setLinkCopied(false), 2000);
+        });
+    };
+
+    // ── save ──────────────────────────────────────────────────────────────────
+    const saveNow = useCallback(async (els: DiagramElement[]) => {
+        setSaveStatus('saving');
+        try {
+            await saveDiagramEditorState(diagramId, { template, blocks: els });
+            setSaveStatus('saved');
+            setTimeout(() => setSaveStatus('idle'), 2000);
+        } catch {
+            setSaveStatus('error');
+        }
+    }, [diagramId, template]);
+
+    // autosave: debounce 2s after every elements change
+    useEffect(() => {
+        if (!canEdit) return;
+        if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = setTimeout(() => void saveNow(elements), 2000);
+        return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
+    }, [elements, canEdit, saveNow]);
+
+    // ── zoom wheel (zoom around cursor) ───────────────────────────────────────
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) return;
         const onWheel = (e: WheelEvent) => {
             if (!e.ctrlKey) return;
             e.preventDefault();
+            const rect = canvas.getBoundingClientRect();
+            const mx = e.clientX - rect.left;
+            const my = e.clientY - rect.top;
             const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
-            setZoom((z) => parseFloat(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z + delta)).toFixed(1)));
+            setZoom((z) => {
+                const nz = parseFloat(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z + delta)).toFixed(2));
+                setPanX((px) => mx - (mx - px) * (nz / z));
+                setPanY((py) => my - (my - py) * (nz / z));
+                return nz;
+            });
         };
         canvas.addEventListener('wheel', onWheel, { passive: false });
         return () => canvas.removeEventListener('wheel', onWheel);
     }, []);
 
-    const clampZoom = (v: number) =>
-        setZoom(parseFloat(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, v)).toFixed(1)));
+    const clampZoom = (nz: number) => {
+        const canvas = canvasRef.current;
+        const clamped = parseFloat(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, nz)).toFixed(2));
+        if (canvas) {
+            const cx = canvas.getBoundingClientRect().width / 2;
+            const cy = canvas.getBoundingClientRect().height / 2;
+            setPanX((px) => cx - (cx - px) * (clamped / zoom));
+            setPanY((py) => cy - (cy - py) * (clamped / zoom));
+        }
+        setZoom(clamped);
+    };
 
     // ── canvas coordinate helper ──────────────────────────────────────────────
     const getCanvasPoint = (clientX: number, clientY: number) => {
@@ -207,30 +264,84 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
         if (!el) return { x: 0, y: 0 };
         const r = el.getBoundingClientRect();
         return {
-            x: (clientX - r.left + el.scrollLeft) / zoom,
-            y: (clientY - r.top + el.scrollTop) / zoom,
+            x: (clientX - r.left - panX) / zoom,
+            y: (clientY - r.top - panY) / zoom,
         };
     };
 
-    // ── pan handlers ──────────────────────────────────────────────────────────
+    // ── canvas pointer events (pan + drawing) ─────────────────────────────────
     const onCanvasPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
-        if (tool !== 'pan') return;
-        const el = canvasRef.current;
-        if (!el) return;
-        e.currentTarget.setPointerCapture(e.pointerId);
-        panRef.current = { startX: e.clientX, startY: e.clientY, scrollLeft: el.scrollLeft, scrollTop: el.scrollTop };
-        setIsPanning(true);
+        // ignore clicks that originated on a block
+        if ((e.target as Element).closest('[data-block]')) return;
+
+        if (tool === 'pan') {
+            e.currentTarget.setPointerCapture(e.pointerId);
+            panRef.current = { startX: e.clientX, startY: e.clientY, scrollLeft: panX, scrollTop: panY };
+            setIsPanning(true);
+            return;
+        }
+
+        if (!canEdit) return;
+        const pt = getCanvasPoint(e.clientX, e.clientY);
+
+        if (tool === 'line') {
+            setActiveLineStart(pt);
+            setActiveLineCurrent(pt);
+            e.currentTarget.setPointerCapture(e.pointerId);
+        } else if (tool === 'pencil') {
+            const id = generateId('pencil');
+            activePencilRef.current = { id, points: [[pt.x, pt.y]] };
+            setPencilPreview([[pt.x, pt.y]]);
+            e.currentTarget.setPointerCapture(e.pointerId);
+        }
     };
+
     const onCanvasPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
-        if (tool !== 'pan' || !panRef.current) return;
-        const el = canvasRef.current;
-        if (!el) return;
-        el.scrollLeft = panRef.current.scrollLeft - (e.clientX - panRef.current.startX);
-        el.scrollTop = panRef.current.scrollTop - (e.clientY - panRef.current.startY);
+        if (tool === 'pan') {
+            if (!panRef.current) return;
+            setPanX(panRef.current.scrollLeft + (e.clientX - panRef.current.startX));
+            setPanY(panRef.current.scrollTop + (e.clientY - panRef.current.startY));
+            return;
+        }
+
+        if (!canEdit) return;
+        const pt = getCanvasPoint(e.clientX, e.clientY);
+
+        if (tool === 'line' && activeLineStart) {
+            setActiveLineCurrent(pt);
+        } else if (tool === 'pencil' && activePencilRef.current) {
+            activePencilRef.current.points.push([pt.x, pt.y]);
+            setPencilPreview([...activePencilRef.current.points]);
+        }
     };
-    const onCanvasPointerUp = () => {
-        panRef.current = null;
-        setIsPanning(false);
+
+    const onCanvasPointerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
+        if (tool === 'pan') {
+            panRef.current = null;
+            setIsPanning(false);
+            return;
+        }
+
+        if (!canEdit) return;
+        const pt = getCanvasPoint(e.clientX, e.clientY);
+
+        if (tool === 'line' && activeLineStart) {
+            if (Math.hypot(pt.x - activeLineStart.x, pt.y - activeLineStart.y) > 8) {
+                const line: DiagramLineElement = {
+                    id: generateId('line'),
+                    kind: 'line', x1: activeLineStart.x, y1: activeLineStart.y, x2: pt.x, y2: pt.y,
+                    style: lineStyle, startEnding: lineStartEnding, endEnding: lineEndEnding,
+                };
+                setElements((cur) => [...cur, line]);
+            }
+            setActiveLineStart(null);
+            setActiveLineCurrent(null);
+        } else if (tool === 'pencil' && activePencilRef.current) {
+            const { id, points } = activePencilRef.current;
+            if (points.length > 2) setElements((cur) => [...cur, { id, kind: 'pencil', points } as DiagramPencilElement]);
+            activePencilRef.current = null;
+            setPencilPreview([]);
+        }
     };
 
     // ── element helpers ───────────────────────────────────────────────────────
@@ -244,7 +355,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
     });
 
     const addBlock = (tpl: DiagramBlockTemplate) => {
-        const id = `${tpl.type}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const id = generateId(tpl.type);
         setElements((cur) => [
             ...cur,
             createBlock(tpl, id, 100 + cur.filter(isBlock).length * 20, 100),
@@ -273,8 +384,8 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
         const tpl = [...UML_BLOCK_TEMPLATES, ...SHAPE_BLOCK_TEMPLATES].find((t) => t.type === blockType);
         if (!tpl) return;
         const pt = getCanvasPoint(e.clientX, e.clientY);
-        const id = `${tpl.type}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-        setElements((cur) => [...cur, createBlock(tpl, id, Math.max(0, pt.x - 40), Math.max(0, pt.y - 24))]);
+        const id = generateId(tpl.type);
+        setElements((cur) => [...cur, createBlock(tpl, id, pt.x - 40, pt.y - 24)]);
     };
 
     // ── block pointer events ──────────────────────────────────────────────────
@@ -286,8 +397,8 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
         e.currentTarget.setPointerCapture(e.pointerId);
         const sx = e.clientX, sy = e.clientY, bx = block.x, by = block.y;
         const move = (me: PointerEvent) => updateEl(block.id, {
-            x: Math.max(0, bx + (me.clientX - sx) / zoom),
-            y: Math.max(0, by + (me.clientY - sy) / zoom),
+            x: bx + (me.clientX - sx) / zoom,
+            y: by + (me.clientY - sy) / zoom,
         });
         const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
         window.addEventListener('pointermove', move);
@@ -308,47 +419,6 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
         window.addEventListener('pointerup', up);
     };
 
-    // ── SVG pointer events ────────────────────────────────────────────────────
-    const onSvgDown = (e: ReactPointerEvent<SVGSVGElement>) => {
-        if (!canEdit) return;
-        const pt = getCanvasPoint(e.clientX, e.clientY);
-        if (tool === 'line') { setActiveLineStart(pt); setActiveLineCurrent(pt); }
-        else if (tool === 'pencil') {
-            const id = `pencil-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-            activePencilRef.current = { id, points: [[pt.x, pt.y]] };
-            setPencilPreview([[pt.x, pt.y]]);
-            e.currentTarget.setPointerCapture(e.pointerId);
-        }
-    };
-    const onSvgMove = (e: ReactPointerEvent<SVGSVGElement>) => {
-        if (!canEdit) return;
-        const pt = getCanvasPoint(e.clientX, e.clientY);
-        if (tool === 'line' && activeLineStart) setActiveLineCurrent(pt);
-        else if (tool === 'pencil' && activePencilRef.current) {
-            activePencilRef.current.points.push([pt.x, pt.y]);
-            setPencilPreview([...activePencilRef.current.points]);
-        }
-    };
-    const onSvgUp = (e: ReactPointerEvent<SVGSVGElement>) => {
-        if (!canEdit) return;
-        const pt = getCanvasPoint(e.clientX, e.clientY);
-        if (tool === 'line' && activeLineStart) {
-            if (Math.hypot(pt.x - activeLineStart.x, pt.y - activeLineStart.y) > 8) {
-                const line: DiagramLineElement = {
-                    id: `line-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-                    kind: 'line', x1: activeLineStart.x, y1: activeLineStart.y, x2: pt.x, y2: pt.y,
-                    style: lineStyle, startEnding: lineStartEnding, endEnding: lineEndEnding,
-                };
-                setElements((cur) => [...cur, line]);
-            }
-            setActiveLineStart(null); setActiveLineCurrent(null);
-        } else if (tool === 'pencil' && activePencilRef.current) {
-            const { id, points } = activePencilRef.current;
-            if (points.length > 2) setElements((cur) => [...cur, { id, kind: 'pencil', points } as DiagramPencilElement]);
-            activePencilRef.current = null; setPencilPreview([]);
-            e.currentTarget.releasePointerCapture(e.pointerId);
-        }
-    };
 
     // ── export ────────────────────────────────────────────────────────────────
     const downloadBlob = (blob: Blob, filename: string) => {
@@ -396,44 +466,166 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
         };
     };
 
-    const captureCanvas = async () => {
+    const captureCanvas = async (transparent = false) => {
         const { default: html2canvas } = await import('html2canvas');
         const el = canvasContentRef.current;
         if (!el) throw new Error('Canvas not found');
         const savedZoom = zoom;
+        const savedPanX = panX;
+        const savedPanY = panY;
         setZoom(1);
+        setPanX(0);
+        setPanY(0);
         await new Promise<void>((r) => setTimeout(r, 150));
         const bounds = getContentBounds();
         const canvas = await html2canvas(el, {
             scale: 2,
-            backgroundColor: '#ffffff',
+            backgroundColor: transparent ? null : '#ffffff',
             useCORS: true,
             logging: false,
+            onclone: (doc, cloned) => {
+                // Apply CSS vars to :root so all var() references resolve correctly
+                const vars: Record<string, string> = {
+                    '--text-color': '#000000',
+                    '--primary': '#1a56db',
+                    '--primary-contrast': '#ffffff',
+                    '--surface': '#ffffff',
+                    '--bg-soft': '#f8f8f8',
+                    '--border': '#d0d0d0',
+                    '--text-secondary': '#555555',
+                };
+                Object.entries(vars).forEach(([k, v]) => doc.documentElement.style.setProperty(k, v));
+
+                // hide resize handles
+                cloned.querySelectorAll<HTMLElement>('[class*="ResizeHandle"]').forEach((el) => {
+                    el.style.display = 'none';
+                });
+
+                // fix drawing SVG — only the top-level drawing svg (not shape svgs inside blocks)
+                const drawingSvg = cloned.querySelector<SVGSVGElement>('[class*="CanvasSvg"]');
+                if (drawingSvg) {
+                    // user-drawn lines and pencil paths
+                    drawingSvg.querySelectorAll<SVGElement>(':scope > line, :scope > path').forEach((el) => {
+                        el.style.stroke = '#000000';
+                        el.style.strokeWidth = '2px';
+                    });
+                    // arrowhead marker fills (inside <defs>)
+                    drawingSvg.querySelectorAll<SVGElement>('marker polygon').forEach((el) => {
+                        el.style.fill = '#000000';
+                        el.style.stroke = 'none';
+                    });
+                    drawingSvg.querySelectorAll<SVGElement>('marker polyline').forEach((el) => {
+                        el.style.fill = 'none';
+                        el.style.stroke = '#000000';
+                        el.style.strokeWidth = '1.5px';
+                    });
+                    drawingSvg.querySelectorAll<SVGElement>('marker circle').forEach((el) => {
+                        el.style.fill = '#000000';
+                    });
+                }
+            },
             ...(bounds ?? {}),
         });
         setZoom(savedZoom);
+        setPanX(savedPanX);
+        setPanY(savedPanY);
         return canvas;
+    };
+
+    const buildSvg = (transparent = false): string => {
+        const bounds = getContentBounds();
+        const PAD = 24;
+        const vx = bounds ? bounds.x : 0;
+        const vy = bounds ? bounds.y : 0;
+        const vw = bounds ? bounds.width : 800;
+        const vh = bounds ? bounds.height : 600;
+
+        const escXml = (s: string) =>
+            s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+        const defs = `<defs>
+  <marker id="e-arrow" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#000"/></marker>
+  <marker id="e-open" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><polyline points="0,1 9,4 0,7" fill="none" stroke="#000" stroke-width="1.5"/></marker>
+  <marker id="e-circle" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto"><circle cx="4" cy="4" r="3" fill="#000"/></marker>
+  <marker id="s-arrow" markerWidth="10" markerHeight="7" refX="1" refY="3.5" orient="auto-start-reverse"><polygon points="0 0,10 3.5,0 7" fill="#000"/></marker>
+  <marker id="s-open" markerWidth="10" markerHeight="8" refX="1" refY="4" orient="auto-start-reverse"><polyline points="0,1 9,4 0,7" fill="none" stroke="#000" stroke-width="1.5"/></marker>
+  <marker id="s-circle" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto-start-reverse"><circle cx="4" cy="4" r="3" fill="#000"/></marker>
+</defs>`;
+
+        const endMarker = (e: LineEnding, prefix: 'e' | 's') => {
+            if (e === 'arrow') return `url(#${prefix}-arrow)`;
+            if (e === 'open-arrow') return `url(#${prefix}-open)`;
+            if (e === 'circle-end') return `url(#${prefix}-circle)`;
+            return '';
+        };
+
+        const strokeDash = (s: LineStyle) =>
+            s === 'dashed' ? 'stroke-dasharray="10,5"' : s === 'dotted' ? 'stroke-dasharray="3,5"' : '';
+
+        const svgLines = elements.filter(isLine).map((l) => {
+            const me = endMarker(l.endEnding, 'e');
+            const ms = endMarker(l.startEnding, 's');
+            return `<line x1="${l.x1}" y1="${l.y1}" x2="${l.x2}" y2="${l.y2}" stroke="#000" stroke-width="2" ${strokeDash(l.style)} ${me ? `marker-end="${me}"` : ''} ${ms ? `marker-start="${ms}"` : ''}/>`;
+        }).join('\n');
+
+        const svgPencil = elements.filter(isPencil).map((p) =>
+            `<path d="${pointsToPath(p.points)}" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`
+        ).join('\n');
+
+        const svgBlocks = elements.filter(isBlock).map((b) => {
+            const x = b.x, y = b.y, w = b.width, h = b.height;
+            const isShape = isShapeBlockType(b.type);
+            if (isShape) {
+                const shapeColors: Record<string, string> = {
+                    rectangle: '#3b82f6', circle: '#ec4899', diamond: '#f59e0b',
+                    triangle: '#22c55e', sticky: '#eab308',
+                };
+                const color = shapeColors[b.type] ?? '#3b82f6';
+                let shapeEl = '';
+                if (b.type === 'rectangle') shapeEl = `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="rgba(59,130,246,0.07)" stroke="${color}" stroke-width="2.5" rx="6"/>`;
+                else if (b.type === 'circle') shapeEl = `<ellipse cx="${x + w / 2}" cy="${y + h / 2}" rx="${w / 2}" ry="${h / 2}" fill="rgba(236,72,153,0.07)" stroke="${color}" stroke-width="2.5"/>`;
+                else if (b.type === 'diamond') shapeEl = `<polygon points="${x + w / 2},${y + PAD / 2} ${x + w - PAD / 2},${y + h / 2} ${x + w / 2},${y + h - PAD / 2} ${x + PAD / 2},${y + h / 2}" fill="none" stroke="${color}" stroke-width="2.5"/>`;
+                else if (b.type === 'triangle') shapeEl = `<polygon points="${x + w / 2},${y + PAD / 2} ${x + w - PAD / 2},${y + h - PAD / 2} ${x + PAD / 2},${y + h - PAD / 2}" fill="none" stroke="${color}" stroke-width="2.5"/>`;
+                else if (b.type === 'sticky') shapeEl = `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="#fef9c3" stroke="#eab308" stroke-width="2" rx="4"/>`;
+                return `${shapeEl}\n<text x="${x + w / 2}" y="${y + h / 2}" text-anchor="middle" dominant-baseline="middle" font-size="13" font-weight="600" fill="${color}">${escXml(b.title)}</text>`;
+            }
+            return `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="#fff" stroke="#1a56db" stroke-width="2" rx="10"/>
+<rect x="${x}" y="${y}" width="${w}" height="32" fill="#1a56db" rx="10"/>
+<rect x="${x}" y="${y + 22}" width="${w}" height="10" fill="#1a56db"/>
+<text x="${x + w / 2}" y="${y + 16}" text-anchor="middle" dominant-baseline="middle" font-size="13" font-weight="700" fill="#fff">${escXml(b.title)}</text>
+<text x="${x + 10}" y="${y + 48}" font-size="12" fill="#000" font-family="Consolas,monospace">${escXml(b.body)}</text>`;
+        }).join('\n');
+
+        const bgRect = transparent ? '' : `<rect x="${vx}" y="${vy}" width="${vw}" height="${vh}" fill="#ffffff"/>`;
+        return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vx} ${vy} ${vw} ${vh}" width="${vw}" height="${vh}">\n${defs}\n${bgRect}\n${svgLines}\n${svgPencil}\n${svgBlocks}\n</svg>`;
     };
 
     const handleExport = async (format: ExportFormat) => {
         setIsExporting(true);
         try {
+            const fname = renaming || diagramName || 'diagram';
             if (format === 'json') {
                 const data = JSON.stringify(elements, null, 2);
-                downloadBlob(new Blob([data], { type: 'application/json' }), 'diagram.json');
+                downloadBlob(new Blob([data], { type: 'application/json' }), `${fname}.json`);
+                setExportOpen(false);
+                return;
+            }
+            if (format === 'svg') {
+                const svgStr = buildSvg(transparentBg);
+                downloadBlob(new Blob([svgStr], { type: 'image/svg+xml' }), `${fname}.svg`);
                 setExportOpen(false);
                 return;
             }
 
-            const canvas = await captureCanvas();
+            const canvas = await captureCanvas(transparentBg);
 
             if (format === 'png') {
                 canvas.toBlob((blob) => {
-                    if (blob) downloadBlob(blob, 'diagram.png');
+                    if (blob) downloadBlob(blob, `${fname}.png`);
                 }, 'image/png');
             } else if (format === 'jpeg') {
                 canvas.toBlob((blob) => {
-                    if (blob) downloadBlob(blob, 'diagram.jpeg');
+                    if (blob) downloadBlob(blob, `${fname}.jpeg`);
                 }, 'image/jpeg', 0.92);
             } else if (format === 'pdf') {
                 const { jsPDF } = await import('jspdf');
@@ -446,7 +638,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                     format: [w, h],
                 });
                 pdf.addImage(imgData, 'PNG', 0, 0, w, h);
-                pdf.save('diagram.pdf');
+                pdf.save(`${fname}.pdf`);
             }
 
             setExportOpen(false);
@@ -455,19 +647,6 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
         } finally {
             setIsExporting(false);
         }
-    };
-
-    // ── save ──────────────────────────────────────────────────────────────────
-    const handleSave = async () => {
-        setIsSaving(true); setCanvasError(null);
-        try {
-            await saveDiagramEditorState(diagramId, { template, blocks: elements });
-            await queryClient.invalidateQueries({ queryKey: ['diagram', diagramId] });
-            await queryClient.invalidateQueries({ queryKey: ['diagramEditor', diagramId] });
-            await queryClient.invalidateQueries({ queryKey: ['myDiagrams'] });
-        } catch (err) {
-            setCanvasError(err instanceof Error ? err.message : t.diagrams.saveContentError);
-        } finally { setIsSaving(false); }
     };
 
     // ── rename / delete ───────────────────────────────────────────────────────
@@ -502,14 +681,12 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
 
     const selectTool = (t: DrawingTool) => {
         setTool(t);
-        if (t === 'line') togglePanel('line-config');
-        else setLeftPanel('none');
+        if (t !== 'select' && t !== 'pan') setLeftPanel('none');
     };
 
-    const applyTemplate = (id: string) => {
+    const _applyTemplate = (id: string) => {
         const tpl = DIAGRAM_TEMPLATES.find((t) => t.id === id);
         if (tpl) { setElements(tpl.blocks); setTemplate(id); }
-        setTemplatesOpen(false);
         setLeftPanel('none');
     };
 
@@ -522,7 +699,6 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
     );
 
     const isDrawing = tool === 'line' || tool === 'pencil';
-    const isPanTool = tool === 'pan';
 
     // ─────────────────────────────────────────────────────────────────────────
     return (
@@ -540,8 +716,25 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                 </button>
 
                 <span className={styles.DiagramName}>{renaming !== diagramName ? renaming : diagramName}</span>
+                {canEdit && saveStatus !== 'idle' ? (
+                    <span className={`${styles.SaveStatus} ${styles[`SaveStatus_${saveStatus}`]}`}>
+                        {saveStatus === 'saving' ? 'Сохранение…'
+                            : saveStatus === 'saved' ? '✓ Сохранено'
+                            : 'Ошибка сохранения'}
+                    </span>
+                ) : null}
 
                 <div className={styles.TopBarRight}>
+                    <button
+                        type="button"
+                        className={styles.TopBarBtn}
+                        title={mode === 'dark' ? 'Светлая тема' : 'Тёмная тема'}
+                        onClick={toggleMode}
+                    >
+                        {mode === 'dark'
+                            ? <DarkModeOutlinedIcon fontSize="small" />
+                            : <LightModeOutlinedIcon fontSize="small" />}
+                    </button>
                     <button
                         type="button"
                         className={styles.TopBarBtn}
@@ -550,21 +743,11 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                     >
                         <FileDownloadOutlinedIcon fontSize="small" />
                     </button>
-                    {canEdit ? (
-                        <Button
-                            variant="contained"
-                            size="small"
-                            loading={isSaving}
-                            onClick={() => void handleSave()}
-                        >
-                            {t.diagrams.saveContent}
-                        </Button>
-                    ) : null}
                     <button
                         type="button"
                         className={`${styles.TopBarBtn} ${menuOpen ? styles.TopBarBtn_active : ''}`}
                         title="Настройки"
-                        onClick={() => { setMenuOpen((o) => !o); setTemplatesOpen(false); }}
+                        onClick={() => { setMenuOpen((o) => !o); setLeftPanel('none'); }}
                     >
                         <MoreVertOutlinedIcon fontSize="small" />
                     </button>
@@ -602,6 +785,28 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                                 </Button>
                             </div>
                         ) : null}
+
+                        <div className={styles.SettingsRow}>
+                            <Typography variant="caption" style={{ fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-secondary, #888)' }}>
+                                Доступ
+                            </Typography>
+                            <label className={styles.PublicToggle}>
+                                <span>Публичный просмотр</span>
+                                <button
+                                    type="button"
+                                    role="switch"
+                                    aria-checked={isPublic}
+                                    className={`${styles.ToggleSwitch} ${isPublic ? styles.ToggleSwitch_on : ''}`}
+                                    onClick={() => setIsPublic((v) => !v)}
+                                />
+                            </label>
+                            <div className={styles.ShareLinkRow}>
+                                <span className={styles.ShareLinkText} title={shareUrl}>{shareUrl}</span>
+                                <button type="button" className={styles.CopyBtn} onClick={copyLink}>
+                                    {linkCopied ? '✓' : 'Копировать'}
+                                </button>
+                            </div>
+                        </div>
 
                         <Button
                             variant="outlined"
@@ -644,8 +849,16 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                         <Typography variant="body2" color="text.secondary" style={{ marginBottom: 16 }}>
                             Выберите формат файла
                         </Typography>
+                        <label className={styles.TransparentToggle}>
+                            <input
+                                type="checkbox"
+                                checked={transparentBg}
+                                onChange={(e) => setTransparentBg(e.target.checked)}
+                            />
+                            Прозрачный фон <span className={styles.TransparentNote}>(PNG, SVG)</span>
+                        </label>
                         <div className={styles.FormatGrid}>
-                            {(['json', 'png', 'jpeg', 'pdf'] as ExportFormat[]).map((fmt) => (
+                            {(['json', 'svg', 'png', 'jpeg', 'pdf'] as ExportFormat[]).map((fmt) => (
                                 <button
                                     key={fmt}
                                     type="button"
@@ -656,6 +869,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                                     <span className={styles.FormatExt}>{fmt.toUpperCase()}</span>
                                     <span className={styles.FormatDesc}>
                                         {fmt === 'json' ? 'Данные диаграммы'
+                                            : fmt === 'svg' ? 'Векторный SVG'
                                             : fmt === 'png' ? 'Изображение PNG'
                                             : fmt === 'jpeg' ? 'Изображение JPEG'
                                             : 'Документ PDF'}
@@ -719,7 +933,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                                 type="button"
                                 title="Линия"
                                 className={`${styles.ToolBtn} ${tool === 'line' ? styles.ToolBtn_active : ''} ${leftPanel === 'line-config' ? styles.ToolBtn_panel : ''}`}
-                                onClick={() => { selectTool('line'); togglePanel('line-config'); }}
+                                onClick={() => { setTool('line'); togglePanel('line-config'); }}
                             >
                                 <TimelineOutlinedIcon fontSize="small" />
                             </button>
@@ -738,8 +952,8 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                             <button
                                 type="button"
                                 title="Шаблоны"
-                                className={`${styles.ToolBtn} ${templatesOpen || leftPanel === 'uml' ? styles.ToolBtn_panel : ''}`}
-                                onClick={() => setTemplatesOpen((o) => !o)}
+                                className={`${styles.ToolBtn} ${leftPanel === 'templates' || leftPanel === 'uml' ? styles.ToolBtn_panel : ''}`}
+                                onClick={() => togglePanel('templates')}
                             >
                                 <TableChartOutlinedIcon fontSize="small" />
                             </button>
@@ -750,7 +964,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
 
                     {/* zoom */}
                     <button type="button" className={styles.ZoomBtn} title="Уменьшить" onClick={() => clampZoom(zoom - ZOOM_STEP)}>−</button>
-                    <button type="button" className={styles.ZoomLabel} title="Сбросить" onClick={() => setZoom(1)}>{Math.round(zoom * 100)}%</button>
+                    <button type="button" className={styles.ZoomLabel} title="Сбросить" onClick={() => { setZoom(1); setPanX(40); setPanY(40); }}>{Math.round(zoom * 100)}%</button>
                     <button type="button" className={styles.ZoomBtn} title="Увеличить" onClick={() => clampZoom(zoom + ZOOM_STEP)}>+</button>
                 </nav>
 
@@ -771,8 +985,27 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                             </button>
                         ))}
                     </div>
+                ) : leftPanel === 'templates' ? (
+                    <div className={styles.LeftPanel}>
+                        <Typography variant="subtitle2" className={styles.PanelTitle}>Шаблоны</Typography>
+                        <button
+                            type="button"
+                            className={styles.PaletteItem}
+                            onClick={() => setLeftPanel('uml')}
+                        >
+                            <TableChartOutlinedIcon fontSize="small" style={{ marginRight: 6 }} />
+                            UML
+                        </button>
+                    </div>
                 ) : leftPanel === 'uml' ? (
                     <div className={styles.LeftPanel}>
+                        <button
+                            type="button"
+                            className={styles.PanelBack}
+                            onClick={() => setLeftPanel('templates')}
+                        >
+                            ← Шаблоны
+                        </button>
                         <Typography variant="subtitle2" className={styles.PanelTitle}>UML-блоки</Typography>
                         {UML_BLOCK_TEMPLATES.map((tpl) => (
                             <button
@@ -796,24 +1029,6 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                     </div>
                 ) : null}
 
-                {/* ── TEMPLATES DROPDOWN ── */}
-                {templatesOpen ? (
-                    <>
-                        <div className={styles.Overlay} onClick={() => setTemplatesOpen(false)} />
-                        <div className={styles.TemplatesDropdown}>
-                            <Typography variant="subtitle2" className={styles.PanelTitle}>Шаблоны</Typography>
-                            <button
-                                type="button"
-                                className={styles.TemplateItem}
-                                onClick={() => { setTemplatesOpen(false); togglePanel('uml'); }}
-                            >
-                                <TableChartOutlinedIcon fontSize="small" />
-                                UML
-                            </button>
-                        </div>
-                    </>
-                ) : null}
-
                 {/* ── CANVAS ── */}
                 {canvasError ? (
                     <Alert severity="error" style={{ position: 'absolute', top: 12, right: 12, zIndex: 20 }}>
@@ -830,14 +1045,11 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                     onPointerMove={onCanvasPointerMove}
                     onPointerUp={onCanvasPointerUp}
                 >
-                    <div ref={canvasContentRef} className={styles.CanvasContent} style={{ transform: `scale(${zoom})` }}>
+                    <div ref={canvasContentRef} className={styles.CanvasContent} style={{ transform: `translate(${panX}px, ${panY}px) scale(${zoom})` }}>
 
                         <svg
-                            className={`${styles.CanvasSvg} ${isDrawing ? styles.CanvasSvg_active : ''}`}
-                            width="2000" height="2000"
-                            onPointerDown={onSvgDown}
-                            onPointerMove={onSvgMove}
-                            onPointerUp={onSvgUp}
+                            className={styles.CanvasSvg}
+                            width="100000" height="100000"
                         >
                             <SvgDefs />
                             {elements.filter(isLine).map((line) => (
@@ -886,6 +1098,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                             return (
                                 <div
                                     key={block.id}
+                                    data-block="true"
                                     className={`${styles.Block} ${styles[`Block_${block.type}`]} ${isShape ? styles.Block_shape : ''}`}
                                     style={{ left: block.x, top: block.y, width: block.width, height: block.height, cursor: tool === 'eraser' ? 'pointer' : undefined }}
                                     onPointerDown={(e) => onBlockPointerDown(e, block)}

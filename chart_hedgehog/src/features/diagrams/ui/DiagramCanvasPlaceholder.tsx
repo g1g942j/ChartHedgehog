@@ -3,13 +3,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-
-import type { DragEvent, PointerEvent as ReactPointerEvent } from 'react';
-
 import BackspaceOutlinedIcon from '@mui/icons-material/BackspaceOutlined';
 import GestureOutlinedIcon from '@mui/icons-material/GestureOutlined';
 import NearMeOutlinedIcon from '@mui/icons-material/NearMeOutlined';
 import TimelineOutlinedIcon from '@mui/icons-material/TimelineOutlined';
+
+import type { DragEvent, PointerEvent as ReactPointerEvent } from 'react';
 
 import { useLocale } from '@/shared/i18n';
 import { Alert } from '@/shared/ui/Alert';
@@ -23,14 +22,14 @@ import {
     DIAGRAM_TEMPLATES,
     type DiagramBlockTemplate,
     type DiagramCanvasBlock,
-    type DiagramElement,
     type DiagramEditorState,
+    type DiagramElement,
     type DiagramLineElement,
     type DiagramPencilElement,
-    type LineEnding,
-    type LineStyle,
     fetchDiagramEditorState,
     isShapeBlockType,
+    type LineEnding,
+    type LineStyle,
     saveDiagramEditorState,
     SHAPE_BLOCK_TEMPLATES,
     UML_BLOCK_TEMPLATES,

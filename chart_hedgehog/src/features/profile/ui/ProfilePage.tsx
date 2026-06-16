@@ -1,6 +1,6 @@
 'use client';
 
-import { type FormEvent, useEffect, useState } from 'react';
+import { type FormEvent, useEffect,useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 import { AppNavbar } from '@/widgets/AppNavbar';
@@ -33,8 +33,13 @@ export function ProfilePage() {
         deactivateAccountError,
         isDeactivatingAccount,
     } = useProfilePage();
-    const [email, setEmail] = useState('');
-    const [fullName, setFullName] = useState('');
+    const [emailDraft, setEmailDraft] = useState<string | null>(null);
+    const [fullNameDraft, setFullNameDraft] = useState<string | null>(null);
+    const email = emailDraft ?? userMeta?.email ?? '';
+    const fullName = fullNameDraft ?? userMeta?.fullName ?? '';
+    const setEmail = (v: string) => setEmailDraft(v);
+    const setFullName = (v: string) => setFullNameDraft(v);
+
     const [oldPassword, setOldPassword] = useState('');
     const [newPassword, setNewPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
@@ -50,13 +55,6 @@ export function ProfilePage() {
         }
     }, [isLoadingProfile, loadError, router]);
 
-    useEffect(() => {
-        if (userMeta) {
-            setEmail(userMeta.email);
-            setFullName(userMeta.fullName ?? '');
-        }
-    }, [userMeta]);
-
     const handleProfileSubmit = async (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
         resetUpdateProfile();
@@ -64,6 +62,8 @@ export function ProfilePage() {
 
         try {
             await updateProfile({ email, fullName });
+            setEmailDraft(null);
+            setFullNameDraft(null);
             setProfileSuccess(t.profile.profileSaved);
         } catch {
             // Ошибка уже доступна через состояние mutation.

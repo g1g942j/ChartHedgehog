@@ -37,11 +37,7 @@ function readStoredMode(): ThemeMode {
 }
 
 export function ThemeModeProvider({ children }: ThemeModeProviderProps) {
-    const [mode, setMode] = useState<ThemeMode>(DEFAULT_MODE);
-
-    useEffect(() => {
-        setMode(readStoredMode());
-    }, []);
+    const [mode, setMode] = useState<ThemeMode>(readStoredMode);
 
     useEffect(() => {
         const root = document.documentElement;

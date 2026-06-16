@@ -4,10 +4,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import {
     changeCurrentUserPassword,
+    type ChangePasswordPayload,
     deactivateCurrentUser,
     fetchCurrentUser,
     updateCurrentUser,
-    type ChangePasswordPayload,
     type UpdateProfilePayload,
 } from '../api/profile';
 
