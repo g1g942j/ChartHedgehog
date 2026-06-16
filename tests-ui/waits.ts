@@ -42,6 +42,24 @@ export async function waitTextInPage(
   }, timeoutMs);
 }
 
+export async function waitToast(
+  driver: WebDriver,
+  substring: string,
+  timeoutMs = 8_000,
+): Promise<string> {
+  const container = By.css('[role="region"][aria-label="Уведомления"]');
+  await driver.wait(until.elementLocated(container), timeoutMs);
+  const el = await driver.wait(async () => {
+    const msgs = await driver.findElements(By.css('[aria-label="Уведомления"] [class*="Message"]'));
+    for (const m of msgs) {
+      const text = await m.getText();
+      if (text.includes(substring)) return m;
+    }
+    return null;
+  }, timeoutMs);
+  return (await el.getText()).trim();
+}
+
 export async function waitUrl(
   driver: WebDriver,
   urlSubstring: string,

@@ -1,6 +1,6 @@
-import { By, WebDriver, WebElement } from "selenium-webdriver";
+import { By, Select, WebDriver, WebElement } from "selenium-webdriver";
 import { getAppUrl } from "../base-url.js";
-import { waitVisible, waitTextInPage } from "../waits.js";
+import { waitVisible, waitTextInPage, waitToast } from "../waits.js";
 
 export class DiagramsPage {
   constructor(private readonly driver: WebDriver) {}
@@ -74,5 +74,40 @@ export class DiagramsPage {
   async hasCreateError(): Promise<boolean> {
     const els = await this.driver.findElements(By.css(".MuiAlert-message"));
     return els.length > 0;
+  }
+
+  async searchInput() {
+    return waitVisible(
+      this.driver,
+      By.xpath(`//input[@placeholder='Поиск по названию…']`),
+    );
+  }
+
+  async fillSearch(value: string): Promise<void> {
+    const input = await this.searchInput();
+    await input.clear();
+    await input.sendKeys(value);
+  }
+
+  async sortSelect(): Promise<Select> {
+    const el = await waitVisible(this.driver, By.xpath(`(//select)[1]`));
+    return new Select(el);
+  }
+
+  async roleFilterSelect(): Promise<Select> {
+    const el = await waitVisible(this.driver, By.xpath(`(//select)[2]`));
+    return new Select(el);
+  }
+
+  async cloneButtonForCard(card: WebElement) {
+    return card.findElement(By.xpath(`.//button[@title='Клонировать диаграмму']`));
+  }
+
+  async visibleDiagramCards(): Promise<WebElement[]> {
+    return this.driver.findElements(By.xpath(`//ul/li[.//span[contains(@class,'RoleBadge')]]`));
+  }
+
+  async toast(substring: string): Promise<string> {
+    return waitToast(this.driver, substring, 8_000);
   }
 }

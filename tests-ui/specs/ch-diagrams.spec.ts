@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { after, before, beforeEach, afterEach, describe, it } from "mocha";
+import { By } from "selenium-webdriver";
 import { createDriver } from "../driver-factory.js";
 import { loginAs } from "../auth-helper.js";
 import { DiagramsPage } from "../pages/diagrams.page.js";
@@ -175,5 +176,223 @@ describe("Страница диаграмм — пустое состояние"
     await page.goto();
     const empties = await page.emptyState();
     assert.ok(empties.length >= 1, "Должно отображаться пустое состояние");
+  });
+});
+
+describe("Страница диаграмм — поиск", () => {
+  let driver: import("selenium-webdriver").WebDriver;
+  const diagramName = `UI_Search_${Date.now()}`;
+
+  before(async function () {
+    this.timeout(120_000);
+    driver = await createDriver();
+    await loginAs(driver);
+    const page = new DiagramsPage(driver);
+    await page.goto();
+    await page.create(diagramName);
+  });
+
+  after(async () => { await driver?.quit(); });
+
+  beforeEach(async () => {
+    await new DiagramsPage(driver).goto();
+  });
+
+  it("поле поиска отображается при наличии диаграмм", async () => {
+    const page = new DiagramsPage(driver);
+    assert.ok(await (await page.searchInput()).isDisplayed());
+  });
+
+  it("поиск по точному названию показывает только нужную диаграмму", async () => {
+    const page = new DiagramsPage(driver);
+    await page.fillSearch(diagramName);
+    await driver.sleep(400);
+    const cards = await page.diagramCardsByName(diagramName);
+    assert.ok(cards.length >= 1, "Нужная диаграмма должна отображаться");
+    const allCards = await page.visibleDiagramCards();
+    assert.equal(allCards.length, cards.length, "Должна отображаться только найденная диаграмма");
+  });
+
+  it("поиск несуществующего названия показывает «Ничего не найдено»", async () => {
+    const page = new DiagramsPage(driver);
+    await page.fillSearch("__ЭТОГО_ТОЧНО_НЕТ__");
+    await driver.sleep(400);
+    const body = await driver.findElement(By.tagName("body"));
+    const text = await body.getText();
+    assert.ok(text.includes("Ничего не найдено"), "Должно появиться 'Ничего не найдено'");
+  });
+
+  it("очистка поиска возвращает все диаграммы", async () => {
+    const page = new DiagramsPage(driver);
+    await page.fillSearch("__ЭТОГО_ТОЧНО_НЕТ__");
+    await driver.sleep(300);
+    await page.fillSearch("");
+    await driver.sleep(400);
+    const cards = await page.diagramCardsByName(diagramName);
+    assert.ok(cards.length >= 1, "После очистки поиска диаграмма должна снова отображаться");
+  });
+});
+
+describe("Страница диаграмм — сортировка", () => {
+  let driver: import("selenium-webdriver").WebDriver;
+  const nameA = `AAA_Sort_${Date.now()}`;
+  const nameZ = `ZZZ_Sort_${Date.now()}`;
+
+  before(async function () {
+    this.timeout(120_000);
+    driver = await createDriver();
+    await loginAs(driver);
+    const page = new DiagramsPage(driver);
+    await page.goto();
+    await page.create(nameA);
+    await page.goto();
+    await page.create(nameZ);
+  });
+
+  after(async () => { await driver?.quit(); });
+
+  beforeEach(async () => {
+    await new DiagramsPage(driver).goto();
+  });
+
+  it("сортировка по имени А→Я ставит AAA выше ZZZ", async () => {
+    const page = new DiagramsPage(driver);
+    await page.fillSearch(`_Sort_`);
+    await driver.sleep(300);
+    const sel = await page.sortSelect();
+    await sel.selectByValue("name-asc");
+    await driver.sleep(400);
+    const cards = await page.visibleDiagramCards();
+    assert.ok(cards.length >= 2, "Должны быть обе диаграммы");
+    const firstText = await cards[0]!.getText();
+    assert.ok(firstText.includes(nameA), `Первой должна быть ${nameA}, получено: ${firstText}`);
+  });
+
+  it("сортировка по имени Я→А ставит ZZZ выше AAA", async () => {
+    const page = new DiagramsPage(driver);
+    await page.fillSearch(`_Sort_`);
+    await driver.sleep(300);
+    const sel = await page.sortSelect();
+    await sel.selectByValue("name-desc");
+    await driver.sleep(400);
+    const cards = await page.visibleDiagramCards();
+    assert.ok(cards.length >= 2, "Должны быть обе диаграммы");
+    const firstText = await cards[0]!.getText();
+    assert.ok(firstText.includes(nameZ), `Первой должна быть ${nameZ}, получено: ${firstText}`);
+  });
+});
+
+describe("Страница диаграмм — фильтр по роли", () => {
+  let driver: import("selenium-webdriver").WebDriver;
+  const ownerDiagram = `UI_RoleFilter_${Date.now()}`;
+
+  before(async function () {
+    this.timeout(120_000);
+    driver = await createDriver();
+    await loginAs(driver);
+    const page = new DiagramsPage(driver);
+    await page.goto();
+    await page.create(ownerDiagram);
+  });
+
+  after(async () => { await driver?.quit(); });
+
+  beforeEach(async () => {
+    await new DiagramsPage(driver).goto();
+  });
+
+  it("фильтр «Владелец» показывает диаграммы текущего пользователя", async () => {
+    const page = new DiagramsPage(driver);
+    const sel = await page.roleFilterSelect();
+    await sel.selectByValue("OWNER");
+    await driver.sleep(400);
+    const cards = await page.diagramCardsByName(ownerDiagram);
+    assert.ok(cards.length >= 1, "Диаграмма-владелец должна отображаться при фильтре OWNER");
+  });
+
+  it("фильтр «Редактор» не показывает диаграммы, где пользователь владелец", async () => {
+    const page = new DiagramsPage(driver);
+    const sel = await page.roleFilterSelect();
+    await sel.selectByValue("EDITOR");
+    await driver.sleep(400);
+    const cards = await page.diagramCardsByName(ownerDiagram);
+    assert.equal(cards.length, 0, "OWNER-диаграмма не должна появляться при фильтре EDITOR");
+  });
+});
+
+describe("Страница диаграмм — клонирование", () => {
+  let driver: import("selenium-webdriver").WebDriver;
+  const originalName = `UI_Clone_${Date.now()}`;
+
+  before(async function () {
+    this.timeout(120_000);
+    driver = await createDriver();
+    await loginAs(driver);
+    const page = new DiagramsPage(driver);
+    await page.goto();
+    await page.create(originalName);
+  });
+
+  after(async () => { await driver?.quit(); });
+
+  beforeEach(async () => {
+    await new DiagramsPage(driver).goto();
+  });
+
+  it("кнопка клонирования отображается для каждой диаграммы", async () => {
+    const page = new DiagramsPage(driver);
+    const card = await page.diagramCardByName(originalName);
+    const cloneBtn = await page.cloneButtonForCard(card);
+    assert.ok(await cloneBtn.isDisplayed(), "Кнопка клонирования должна быть видна");
+  });
+
+  it("клонирование создаёт копию с суффиксом «(копия)»", async function () {
+    this.timeout(15_000);
+    const page = new DiagramsPage(driver);
+    const card = await page.diagramCardByName(originalName);
+    const cloneBtn = await page.cloneButtonForCard(card);
+    await cloneBtn.click();
+    const cloneName = `${originalName} (копия)`;
+    await page.toast("скопирована");
+    await driver.sleep(500);
+    await page.goto();
+    const copies = await page.diagramCardsByName(cloneName);
+    assert.ok(copies.length >= 1, `Копия '${cloneName}' должна появиться в списке`);
+  });
+
+  it("после клонирования показывается toast «Диаграмма скопирована»", async function () {
+    this.timeout(15_000);
+    const page = new DiagramsPage(driver);
+    const card = await page.diagramCardByName(originalName);
+    const cloneBtn = await page.cloneButtonForCard(card);
+    await cloneBtn.click();
+    const msg = await page.toast("скопирована");
+    assert.ok(msg.includes("скопирована"), `Ожидался toast со словом 'скопирована', получено: ${msg}`);
+  });
+});
+
+describe("Страница диаграмм — toast при создании", () => {
+  let driver: import("selenium-webdriver").WebDriver;
+
+  before(async function () {
+    this.timeout(120_000);
+    driver = await createDriver();
+    await loginAs(driver);
+  });
+
+  after(async () => { await driver?.quit(); });
+
+  beforeEach(async () => {
+    await new DiagramsPage(driver).goto();
+  });
+
+  it("создание диаграммы показывает toast «Диаграмма создана»", async function () {
+    this.timeout(15_000);
+    const page = new DiagramsPage(driver);
+    const name = `UI_Toast_${Date.now()}`;
+    await page.fillNewDiagramName(name);
+    await (await page.createButton()).click();
+    const msg = await page.toast("создана");
+    assert.ok(msg.includes("создана"), `Ожидался toast со словом 'создана', получено: ${msg}`);
   });
 });

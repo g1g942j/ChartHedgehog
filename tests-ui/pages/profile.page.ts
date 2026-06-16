@@ -1,6 +1,6 @@
 import { By, WebDriver } from "selenium-webdriver";
 import { getAppUrl } from "../base-url.js";
-import { waitVisible, waitTextInPage } from "../waits.js";
+import { waitVisible, waitTextInPage, waitToast } from "../waits.js";
 
 export class ProfilePage {
   constructor(private readonly driver: WebDriver) {}
@@ -89,8 +89,11 @@ export class ProfilePage {
   }
 
   async successAlert(): Promise<string> {
-    const el = await waitVisible(this.driver, By.css(".MuiAlert-colorSuccess .MuiAlert-message"), 10_000);
-    return (await el.getText()).trim();
+    return waitToast(this.driver, "", 10_000);
+  }
+
+  async successToast(substring: string): Promise<string> {
+    return waitToast(this.driver, substring, 10_000);
   }
 
   async errorAlert(): Promise<string> {

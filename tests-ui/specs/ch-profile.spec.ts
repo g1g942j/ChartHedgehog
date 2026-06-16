@@ -100,14 +100,15 @@ describe("Страница профиля — кнопка сохранения 
     assert.ok(!disabled, "Кнопка должна быть активна после изменения имени");
   });
 
-  it("сохранение профиля — сообщение «Профиль обновлен»", async () => {
+  it("сохранение профиля — toast «Профиль обновлён»", async function () {
+    this.timeout(15_000);
     const page = new ProfilePage(driver);
     const newName = `Test_${Date.now()}`;
     await page.fillFullName(newName);
     await driver.sleep(300);
     await (await page.saveProfileButton()).click();
-    const success = await page.successAlert();
-    assert.ok(success.includes("обновлен"), `Получено: ${success}`);
+    const success = await page.successToast("обновлен");
+    assert.ok(success.length > 0, `Toast должен содержать сообщение об обновлении, получено: ${success}`);
   });
 });
 
