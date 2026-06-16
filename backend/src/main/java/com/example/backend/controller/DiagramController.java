@@ -153,4 +153,16 @@ public class DiagramController {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
+
+    @PutMapping("/{diagramId}/participants/{userId}")
+    public ResponseEntity<?> updateParticipantRole(@PathVariable Long diagramId,
+                                                   @PathVariable Long userId,
+                                                   @RequestParam ParticipantRole role) {
+        try {
+            Diagram diagram = diagramService.updateParticipantRole(diagramId, userId, role);
+            return ResponseEntity.ok(diagram);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
+    }
 }

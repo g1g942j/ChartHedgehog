@@ -1,8 +1,9 @@
+import { apiFetch } from '@/shared/api/client';
 import {
     clearSession,
     getSessionUser,
-    setSessionUser,
     type SessionUser,
+    setSessionUser,
 } from '@/shared/auth/session';
 
 export type CurrentUserDto = SessionUser;
@@ -17,11 +18,24 @@ export type ChangePasswordPayload = {
     newPassword: string;
 };
 
+type MeResponse = {
+    id: number;
+    username: string;
+    email: string;
+    role: string;
+    fullName?: string | null;
+};
+
 export async function fetchCurrentUser(): Promise<CurrentUserDto> {
-    const user = getSessionUser();
-    if (!user) {
-        throw new Error('Не авторизован');
-    }
+    const data = await apiFetch<MeResponse>('/api/auth/me');
+    const user: SessionUser = {
+        id: data.id,
+        username: data.username,
+        email: data.email,
+        role: data.role,
+        fullName: data.fullName,
+    };
+    setSessionUser(user);
     return user;
 }
 
@@ -40,14 +54,22 @@ export async function updateCurrentUser(
         throw new Error('Введите email');
     }
 
-    const updatedUser: SessionUser = {
-        ...user,
-        email,
-        fullName: fullName || null,
-    };
+    // const updatedUser: SessionUser = {
+    //     ...user,
+    //     email,
+    //     fullName: fullName || null,
+    // };
 
-    setSessionUser(updatedUser);
-    return updatedUser;
+    // setSessionUser(updatedUser);
+    // return updatedUser;
+    await apiFetch<void>('/api/auth/me', {
+        method: 'PUT',
+        body: JSON.stringify({
+            email: payload.email.trim(),
+            fullName: payload.fullName.trim(),
+        }),
+    });
+    return fetchCurrentUser();
 }
 
 export async function changeCurrentUserPassword(
@@ -65,6 +87,14 @@ export async function changeCurrentUserPassword(
         throw new Error('Новый пароль должен содержать минимум 6 символов');
     }
 
+    await apiFetch<void>('/api/auth/me/password', {
+        method: 'PUT',
+        body: JSON.stringify({
+            oldPassword: payload.oldPassword,
+            newPassword: payload.newPassword,
+        }),
+    });
+
     return 'Пароль изменен';
 }
 
@@ -73,10 +103,14 @@ export async function deactivateCurrentUser(): Promise<string> {
         throw new Error('Не авторизован');
     }
 
+    await apiFetch<void>('/api/auth/me', { method: 'DELETE' });
+    clearSession();
+
     clearSession();
     return 'Аккаунт удален';
 }
 
 export async function logoutUser(): Promise<void> {
+    await apiFetch<void>('/api/auth/logout', { method: 'POST' });
     clearSession();
 }

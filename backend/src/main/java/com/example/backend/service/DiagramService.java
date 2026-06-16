@@ -161,4 +161,15 @@ public class DiagramService {
                 .findFirst()
                 .orElse(null);
     }
+
+    @Transactional
+    public Diagram updateParticipantRole(Long diagramId, Long userId, ParticipantRole role) {
+        Diagram diagram = findById(diagramId);
+        diagram.getParticipantRoles().stream()
+                .filter(p -> p.getUser().getId().equals(userId))
+                .findFirst()
+                .orElseThrow(() -> new RuntimeException("Participant not found"))
+                .setRole(role);
+        return diagramRepository.save(diagram);
+    }
 }
