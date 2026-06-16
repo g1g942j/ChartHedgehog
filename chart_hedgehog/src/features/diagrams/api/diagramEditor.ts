@@ -12,7 +12,9 @@ export type DiagramBlockType =
     | 'circle'
     | 'diamond'
     | 'triangle'
-    | 'sticky';
+    | 'sticky'
+    | 'text'
+    | 'comment';
 
 export const SHAPE_BLOCK_TYPES: DiagramBlockType[] = [
     'rectangle',
@@ -120,6 +122,25 @@ export const UML_BLOCK_TEMPLATES: DiagramBlockTemplate[] = [
         body: 'Add details here',
         width: 180,
         height: 110,
+    },
+];
+
+export const TEXT_BLOCK_TEMPLATES: DiagramBlockTemplate[] = [
+    {
+        type: 'text',
+        name: 'Текст',
+        title: 'Текст',
+        body: '',
+        width: 200,
+        height: 60,
+    },
+    {
+        type: 'comment',
+        name: 'Комментарий',
+        title: 'Комментарий',
+        body: '',
+        width: 220,
+        height: 80,
     },
 ];
 
