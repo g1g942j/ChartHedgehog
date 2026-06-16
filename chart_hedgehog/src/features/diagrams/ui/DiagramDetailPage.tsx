@@ -7,6 +7,7 @@ import { Alert } from '@/shared/ui/Alert';
 import { Typography } from '@/shared/ui/Typography';
 
 import { useDiagramDetailContext } from '../model/useDiagramDetailContext';
+import { DiagramCanvasPlaceholder } from './DiagramCanvasPlaceholder';
 import { DiagramDetailLayout } from './DiagramDetailLayout';
 
 export function DiagramDetailPage() {
@@ -43,11 +44,16 @@ export function DiagramDetailPage() {
         );
     }
 
+    const canEdit =
+        diagram.currentUserRole === 'OWNER' || diagram.currentUserRole === 'EDITOR';
+
     return (
         <DiagramDetailLayout
             diagramId={diagramId}
             diagramName={diagram.name}
             currentUserRole={diagram.currentUserRole}
-        />
+        >
+            <DiagramCanvasPlaceholder diagramId={diagramId} canEdit={canEdit} />
+        </DiagramDetailLayout>
     );
 }

@@ -1,6 +1,31 @@
 import { getDiagramById, updateStoredDiagram } from './diagrams';
 
-export type DiagramBlockType = 'class' | 'interface' | 'enum' | 'actor' | 'note';
+export type DiagramBlockType =
+    | 'class'
+    | 'interface'
+    | 'enum'
+    | 'actor'
+    | 'note'
+    | 'rectangle'
+    | 'circle'
+    | 'diamond'
+    | 'triangle'
+    | 'sticky';
+
+export const SHAPE_BLOCK_TYPES: DiagramBlockType[] = [
+    'rectangle',
+    'circle',
+    'diamond',
+    'triangle',
+    'sticky',
+];
+
+export function isShapeBlockType(type: DiagramBlockType): boolean {
+    return SHAPE_BLOCK_TYPES.includes(type);
+}
+
+export type LineStyle = 'solid' | 'dashed' | 'dotted';
+export type LineEnding = 'none' | 'arrow' | 'open-arrow' | 'circle-end';
 
 export type DiagramCanvasBlock = {
     id: string;
@@ -12,6 +37,26 @@ export type DiagramCanvasBlock = {
     width: number;
     height: number;
 };
+
+export type DiagramLineElement = {
+    id: string;
+    kind: 'line';
+    x1: number;
+    y1: number;
+    x2: number;
+    y2: number;
+    style: LineStyle;
+    startEnding: LineEnding;
+    endEnding: LineEnding;
+};
+
+export type DiagramPencilElement = {
+    id: string;
+    kind: 'pencil';
+    points: [number, number][];
+};
+
+export type DiagramElement = DiagramCanvasBlock | DiagramLineElement | DiagramPencilElement;
 
 export type DiagramBlockTemplate = {
     type: DiagramBlockType;
@@ -30,7 +75,7 @@ export type DiagramTemplate = {
 
 export type DiagramEditorState = {
     template?: string | null;
-    blocks: DiagramCanvasBlock[];
+    blocks: DiagramElement[];
 };
 
 export const UML_BLOCK_TEMPLATES: DiagramBlockTemplate[] = [
@@ -76,6 +121,49 @@ export const UML_BLOCK_TEMPLATES: DiagramBlockTemplate[] = [
     },
 ];
 
+export const SHAPE_BLOCK_TEMPLATES: DiagramBlockTemplate[] = [
+    {
+        type: 'rectangle',
+        name: 'Rectangle',
+        title: 'Box',
+        body: '',
+        width: 160,
+        height: 100,
+    },
+    {
+        type: 'circle',
+        name: 'Circle',
+        title: 'Circle',
+        body: '',
+        width: 120,
+        height: 120,
+    },
+    {
+        type: 'diamond',
+        name: 'Diamond',
+        title: 'Decision',
+        body: '',
+        width: 160,
+        height: 100,
+    },
+    {
+        type: 'triangle',
+        name: 'Triangle',
+        title: 'Start',
+        body: '',
+        width: 140,
+        height: 120,
+    },
+    {
+        type: 'sticky',
+        name: 'Sticky Note',
+        title: 'Note here',
+        body: '',
+        width: 180,
+        height: 140,
+    },
+];
+
 export const DIAGRAM_TEMPLATES: DiagramTemplate[] = [
     {
         id: 'uml',
@@ -115,23 +203,6 @@ export const DIAGRAM_TEMPLATES: DiagramTemplate[] = [
     },
 ];
 
-function parseBlocks(content?: string | null): DiagramCanvasBlock[] {
-    if (!content) {
-        return [];
-    }
-
-    try {
-        const parsed = JSON.parse(content) as unknown;
-        if (Array.isArray(parsed)) {
-            return parsed.filter(isCanvasBlock);
-        }
-    } catch {
-        return [];
-    }
-
-    return [];
-}
-
 function isCanvasBlock(value: unknown): value is DiagramCanvasBlock {
     if (!value || typeof value !== 'object') {
         return false;
@@ -150,6 +221,42 @@ function isCanvasBlock(value: unknown): value is DiagramCanvasBlock {
     );
 }
 
+function isLineElement(value: unknown): value is DiagramLineElement {
+    if (!value || typeof value !== 'object') return false;
+    const v = value as Record<string, unknown>;
+    return (
+        v.kind === 'line' &&
+        typeof v.id === 'string' &&
+        typeof v.x1 === 'number' &&
+        typeof v.y1 === 'number' &&
+        typeof v.x2 === 'number' &&
+        typeof v.y2 === 'number'
+    );
+}
+
+function isPencilElement(value: unknown): value is DiagramPencilElement {
+    if (!value || typeof value !== 'object') return false;
+    const v = value as Record<string, unknown>;
+    return v.kind === 'pencil' && typeof v.id === 'string' && Array.isArray(v.points);
+}
+
+function isDiagramElement(value: unknown): value is DiagramElement {
+    return isLineElement(value) || isPencilElement(value) || isCanvasBlock(value);
+}
+
+function parseElements(content?: string | null): DiagramElement[] {
+    if (!content) return [];
+    try {
+        const parsed = JSON.parse(content) as unknown;
+        if (Array.isArray(parsed)) {
+            return parsed.filter(isDiagramElement);
+        }
+    } catch {
+        return [];
+    }
+    return [];
+}
+
 export async function fetchDiagramEditorState(
     diagramId: number,
 ): Promise<DiagramEditorState> {
@@ -160,7 +267,7 @@ export async function fetchDiagramEditorState(
 
     return {
         template: diagram.template,
-        blocks: parseBlocks(diagram.content),
+        blocks: parseElements(diagram.content),
     };
 }
 
