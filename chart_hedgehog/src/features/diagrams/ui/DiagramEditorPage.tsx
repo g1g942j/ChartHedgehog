@@ -362,6 +362,40 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
         URL.revokeObjectURL(url);
     };
 
+    const getContentBounds = () => {
+        const PAD = 24;
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
+        for (const el of elements) {
+            if (isBlock(el)) {
+                minX = Math.min(minX, el.x);
+                minY = Math.min(minY, el.y);
+                maxX = Math.max(maxX, el.x + el.width);
+                maxY = Math.max(maxY, el.y + el.height);
+            } else if (isLine(el)) {
+                minX = Math.min(minX, el.x1, el.x2);
+                minY = Math.min(minY, el.y1, el.y2);
+                maxX = Math.max(maxX, el.x1, el.x2);
+                maxY = Math.max(maxY, el.y1, el.y2);
+            } else if (isPencil(el)) {
+                for (const [px, py] of el.points) {
+                    minX = Math.min(minX, px);
+                    minY = Math.min(minY, py);
+                    maxX = Math.max(maxX, px);
+                    maxY = Math.max(maxY, py);
+                }
+            }
+        }
+
+        if (!isFinite(minX)) return null;
+        return {
+            x: Math.max(0, minX - PAD),
+            y: Math.max(0, minY - PAD),
+            width: maxX - minX + PAD * 2,
+            height: maxY - minY + PAD * 2,
+        };
+    };
+
     const captureCanvas = async () => {
         const { default: html2canvas } = await import('html2canvas');
         const el = canvasContentRef.current;
@@ -369,11 +403,13 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
         const savedZoom = zoom;
         setZoom(1);
         await new Promise<void>((r) => setTimeout(r, 150));
+        const bounds = getContentBounds();
         const canvas = await html2canvas(el, {
             scale: 2,
             backgroundColor: '#ffffff',
             useCORS: true,
             logging: false,
+            ...(bounds ?? {}),
         });
         setZoom(savedZoom);
         return canvas;
