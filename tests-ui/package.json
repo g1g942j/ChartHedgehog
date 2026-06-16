@@ -1,0 +1,16 @@
+{
+  "name": "charthedgehog-ui-tests",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "mocha --config .mocharc.cjs"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "mocha": "^11.0.1",
+    "selenium-webdriver": "^4.27.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.8.3"
+  }
+}
