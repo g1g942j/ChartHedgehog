@@ -1379,3 +1379,221 @@ describe("Список диаграмм — Grid-вид", () => {
     assert.ok(gridItems.length > 0, "В grid-виде должны отображаться карточки GridItem");
   });
 });
+
+// ─── Mockup / UI библиотека ───────────────────────────────────────────────────
+
+describe("Редактор диаграмм — Mockup/UI библиотека", () => {
+  let driver: import("selenium-webdriver").WebDriver;
+  let diagramId: number;
+
+  before(async function () {
+    this.timeout(120_000);
+    driver = await createDriver();
+    await loginAs(driver);
+    diagramId = await createAndOpen(driver, `UI_Mockup_${Date.now()}`);
+  });
+
+  after(async () => { await driver?.quit(); });
+
+  it("в шаблонах есть пункт 'Mockup / UI'", async () => {
+    const page = new DiagramDetailPage(driver);
+    await page.goto(diagramId);
+    await (await page.toolButton("Шаблоны")).click();
+    const item = await waitVisible(driver, By.xpath(`//button[contains(normalize-space(.), 'Mockup')]`), 5_000);
+    assert.ok(await item.isDisplayed());
+  });
+
+  it("клик по 'Mockup / UI' открывает панель с элементами", async () => {
+    const page = new DiagramDetailPage(driver);
+    await page.goto(diagramId);
+    await (await page.toolButton("Шаблоны")).click();
+    await (await waitVisible(driver, By.xpath(`//button[contains(normalize-space(.), 'Mockup')]`), 5_000)).click();
+    const btn = await waitVisible(driver, By.xpath(`//button[normalize-space(.) = 'Button']`), 5_000);
+    assert.ok(await btn.isDisplayed(), "Элемент 'Button' должен быть виден в Mockup-панели");
+  });
+
+  it("панель Mockup содержит все 4 элемента: Button, Input, Checkbox, Card", async () => {
+    const page = new DiagramDetailPage(driver);
+    await page.goto(diagramId);
+    await (await page.toolButton("Шаблоны")).click();
+    await (await waitVisible(driver, By.xpath(`//button[contains(normalize-space(.), 'Mockup')]`), 5_000)).click();
+    await waitVisible(driver, By.xpath(`//button[normalize-space(.) = 'Button']`), 5_000);
+
+    const labels = ['Button', 'Input', 'Checkbox', 'Card'];
+    for (const label of labels) {
+      const els = await driver.findElements(By.xpath(`//button[normalize-space(.) = '${label}']`));
+      assert.ok(els.length > 0, `Элемент '${label}' должен присутствовать в Mockup-панели`);
+    }
+  });
+
+  it("добавление Mockup Button создаёт блок на холсте", async () => {
+    const page = new DiagramDetailPage(driver);
+    await page.goto(diagramId);
+    await (await page.toolButton("Шаблоны")).click();
+    await (await waitVisible(driver, By.xpath(`//button[contains(normalize-space(.), 'Mockup')]`), 5_000)).click();
+    await (await waitVisible(driver, By.xpath(`//button[normalize-space(.) = 'Button']`), 5_000)).click();
+    const block = await waitVisible(driver, By.xpath(`//*[@data-block='true']`), 5_000);
+    assert.ok(await block.isDisplayed(), "После добавления Mockup Button должен появиться блок на холсте");
+  });
+
+  it("блок Mockup отображается как wireframe (содержит SVG-текст или специфичный CSS-класс)", async () => {
+    const page = new DiagramDetailPage(driver);
+    await page.goto(diagramId);
+    await (await page.toolButton("Шаблоны")).click();
+    await (await waitVisible(driver, By.xpath(`//button[contains(normalize-space(.), 'Mockup')]`), 5_000)).click();
+    await (await waitVisible(driver, By.xpath(`//button[normalize-space(.) = 'Button']`), 5_000)).click();
+    await waitVisible(driver, By.xpath(`//*[@data-block='true']`), 5_000);
+    await driver.sleep(200);
+
+    const mockupEls = await driver.findElements(By.css(`[class*="MockupButton"],[class*="Block_mockup"]`));
+    assert.ok(mockupEls.length > 0, "Блок должен иметь mockup-специфичный CSS-класс");
+  });
+});
+
+// ─── Flowchart пресеты ────────────────────────────────────────────────────────
+
+describe("Редактор диаграмм — Flowchart пресеты", () => {
+  let driver: import("selenium-webdriver").WebDriver;
+  let diagramId: number;
+
+  before(async function () {
+    this.timeout(120_000);
+    driver = await createDriver();
+    await loginAs(driver);
+    diagramId = await createAndOpen(driver, `UI_Presets_${Date.now()}`);
+  });
+
+  after(async () => { await driver?.quit(); });
+
+  it("в шаблонах есть пункт 'Пресеты'", async () => {
+    const page = new DiagramDetailPage(driver);
+    await page.goto(diagramId);
+    await (await page.toolButton("Шаблоны")).click();
+    const item = await waitVisible(driver, By.xpath(`//button[contains(normalize-space(.), 'Пресеты')]`), 5_000);
+    assert.ok(await item.isDisplayed());
+  });
+
+  it("клик по 'Пресеты' открывает панель с пресетами", async () => {
+    const page = new DiagramDetailPage(driver);
+    await page.goto(diagramId);
+    await (await page.toolButton("Шаблоны")).click();
+    await (await waitVisible(driver, By.xpath(`//button[contains(normalize-space(.), 'Пресеты')]`), 5_000)).click();
+    const item = await waitVisible(driver, By.xpath(`//*[contains(normalize-space(.), 'Простой процесс')]`), 5_000);
+    assert.ok(await item.isDisplayed(), "Пресет 'Простой процесс' должен быть виден");
+  });
+
+  it("панель пресетов содержит 3 варианта", async () => {
+    const page = new DiagramDetailPage(driver);
+    await page.goto(diagramId);
+    await (await page.toolButton("Шаблоны")).click();
+    await (await waitVisible(driver, By.xpath(`//button[contains(normalize-space(.), 'Пресеты')]`), 5_000)).click();
+    await waitVisible(driver, By.xpath(`//*[contains(normalize-space(.), 'Простой процесс')]`), 5_000);
+
+    const presets = await driver.findElements(By.css(`[class*="PresetItem"]`));
+    assert.ok(presets.length >= 3, `Должно быть минимум 3 пресета, найдено: ${presets.length}`);
+  });
+
+  it("клик по пресету 'Простой процесс' добавляет блоки на холст", async () => {
+    const page = new DiagramDetailPage(driver);
+    await page.goto(diagramId);
+    await (await page.toolButton("Шаблоны")).click();
+    await (await waitVisible(driver, By.xpath(`//button[contains(normalize-space(.), 'Пресеты')]`), 5_000)).click();
+    const preset = await waitVisible(driver, By.xpath(`//*[contains(@class,'PresetItem') and contains(normalize-space(.), 'Простой процесс')]`), 5_000);
+    await preset.click();
+    await driver.sleep(500);
+
+    const blocks = await driver.findElements(By.xpath(`//*[@data-block='true']`));
+    assert.ok(blocks.length >= 2, `Пресет должен добавить минимум 2 блока, найдено: ${blocks.length}`);
+  });
+
+  it("клик по пресету 'Ветвление' добавляет блоки с ромбом", async () => {
+    const page = new DiagramDetailPage(driver);
+    await page.goto(diagramId);
+    await (await page.toolButton("Шаблоны")).click();
+    await (await waitVisible(driver, By.xpath(`//button[contains(normalize-space(.), 'Пресеты')]`), 5_000)).click();
+    const preset = await waitVisible(driver, By.xpath(`//*[contains(@class,'PresetItem') and contains(normalize-space(.), 'Ветвление')]`), 5_000);
+    await preset.click();
+    await driver.sleep(500);
+
+    const blocks = await driver.findElements(By.xpath(`//*[@data-block='true']`));
+    assert.ok(blocks.length >= 3, `Пресет 'Ветвление' должен добавить минимум 3 блока, найдено: ${blocks.length}`);
+  });
+});
+
+// ─── Превью диаграмм в grid-виде ─────────────────────────────────────────────
+
+describe("Список диаграмм — Превью SVG в grid-виде", () => {
+  let driver: import("selenium-webdriver").WebDriver;
+  let diagramId: number;
+
+  before(async function () {
+    this.timeout(180_000);
+    driver = await createDriver();
+    await loginAs(driver);
+
+    // создать диаграмму и добавить блок, чтобы при автосохранении сгенерировался preview
+    diagramId = await createAndOpen(driver, `UI_Preview_${Date.now()}`);
+    const page = new DiagramDetailPage(driver);
+    await page.goto(diagramId);
+    await (await page.toolButton("Фигуры")).click();
+    await (await waitVisible(driver, By.xpath(`//button[normalize-space(.) = 'Rectangle']`), 5_000)).click();
+    await waitVisible(driver, By.xpath(`//*[@data-block='true']`), 5_000);
+    // ждём автосохранения (интервал ~3 с)
+    await driver.sleep(5_000);
+  });
+
+  after(async () => { await driver?.quit(); });
+
+  it("после сохранения диаграммы с блоком в grid-виде появляется img-превью", async () => {
+    const list = new DiagramsPage(driver);
+    await list.goto();
+
+    // переключить в grid-вид
+    const gridBtn = await waitVisible(driver, By.css(`button[title="Сетка"]`), 10_000);
+    await gridBtn.click();
+    await driver.sleep(300);
+
+    // найти карточку нашей диаграммы
+    const previewArea = await waitVisible(
+      driver,
+      By.xpath(`//*[contains(@class,'GridItemPreview') and @aria-label]`),
+      5_000,
+    );
+
+    // проверить, что внутри есть <img> а не только emoji-span
+    const imgs = await previewArea.findElements(By.css(`img[src^="data:image/svg"]`));
+    assert.ok(imgs.length > 0, "В grid-карточке диаграммы с блоком должен отображаться SVG-превью через <img>");
+  });
+
+  it("src img-превью содержит валидный SVG (начинается с <svg)", async () => {
+    const list = new DiagramsPage(driver);
+    await list.goto();
+    const gridBtn = await waitVisible(driver, By.css(`button[title="Сетка"]`), 10_000);
+    await gridBtn.click();
+    await driver.sleep(300);
+
+    const src = await driver.executeScript<string | null>(`
+      const img = document.querySelector('img[src^="data:image/svg"]');
+      return img ? img.src : null;
+    `);
+    assert.ok(src !== null, "img с SVG-превью должен существовать в DOM");
+    const decoded = decodeURIComponent(src!.replace('data:image/svg+xml,', ''));
+    assert.ok(decoded.trim().startsWith('<svg'), "Содержимое превью должно начинаться с <svg");
+  });
+
+  it("диаграмма без блоков показывает emoji-заглушку вместо img", async () => {
+    // создать пустую диаграмму
+    const list = new DiagramsPage(driver);
+    await list.goto();
+    await list.create(`UI_EmptyPreview_${Date.now()}`);
+    await driver.sleep(1_000);
+
+    await list.goto();
+    const gridBtn = await waitVisible(driver, By.css(`button[title="Сетка"]`), 10_000);
+    await gridBtn.click();
+    await driver.sleep(300);
+
+    const emojiSpans = await driver.findElements(By.css(`[class*="GridItemIcon"]`));
+    assert.ok(emojiSpans.length > 0, "Пустая диаграмма должна показывать emoji-заглушку (GridItemIcon)");
+  });
+});
