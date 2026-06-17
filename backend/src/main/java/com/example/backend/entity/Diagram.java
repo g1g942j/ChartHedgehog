@@ -1,5 +1,6 @@
 package com.example.backend.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -35,7 +36,7 @@ public class Diagram {
     @OneToMany(mappedBy = "diagram", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<DiagramBlock> blocks = new ArrayList<>();
 
-
+    @JsonIgnore
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(
             name = "diagram_participants",
