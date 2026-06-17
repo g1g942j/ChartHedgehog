@@ -50,12 +50,16 @@ import {
     type DiagramPencilElement,
     ER_BLOCK_TEMPLATES,
     fetchDiagramEditorState,
+    FLOWCHART_PRESETS,
+    type FlowchartPreset,
     getAnchorPoint,
     isBpmnBlockType,
     isErBlockType,
+    isMockupBlockType,
     isShapeBlockType,
     type LineEnding,
     type LineStyle,
+    MOCKUP_BLOCK_TEMPLATES,
     resolveLineCoords,
     saveDiagramEditorState,
     SHAPE_BLOCK_TEMPLATES,
@@ -67,7 +71,7 @@ import { deleteDiagram, updateDiagramName } from '../api/diagrams';
 // ─── types ────────────────────────────────────────────────────────────────────
 
 type DrawingTool = 'select' | 'pan' | 'eraser' | 'pencil' | 'line';
-type LeftPanel = 'none' | 'shapes' | 'uml' | 'bpmn' | 'er' | 'line-config' | 'templates' | 'text-panel';
+type LeftPanel = 'none' | 'shapes' | 'uml' | 'bpmn' | 'er' | 'mockup' | 'flowchart' | 'line-config' | 'templates' | 'text-panel';
 type EditingBlock = { id: string; title: string; body: string };
 type ExportFormat = 'json' | 'svg' | 'png' | 'jpeg' | 'pdf';
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
@@ -233,6 +237,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
     const [pencilPreview, setPencilPreview] = useState<[number, number][]>([]);
     const panRef = useRef<{ startX: number; startY: number; scrollLeft: number; scrollTop: number } | null>(null);
     const [isPanning, setIsPanning] = useState(false);
+    const touchRef = useRef<{ midX: number; midY: number; dist: number | null } | null>(null);
 
     // ── anchor hover ──────────────────────────────────────────────────────────
     const [anchorHover, setAnchorHover] = useState<{ blockId: string; side: AnchorSide } | null>(null);
@@ -381,6 +386,70 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
         };
         canvas.addEventListener('wheel', onWheel, { passive: false });
         return () => canvas.removeEventListener('wheel', onWheel);
+    }, []);
+
+    // ── touch pan + pinch-zoom ────────────────────────────────────────────────
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        const dist = (a: Touch, b: Touch) => Math.hypot(b.clientX - a.clientX, b.clientY - a.clientY);
+        const mid = (a: Touch, b: Touch) => ({ x: (a.clientX + b.clientX) / 2, y: (a.clientY + b.clientY) / 2 });
+
+        const onTouchStart = (e: TouchEvent) => {
+            if (e.touches.length === 1) {
+                touchRef.current = { midX: e.touches[0].clientX, midY: e.touches[0].clientY, dist: null };
+            } else if (e.touches.length === 2) {
+                const m = mid(e.touches[0], e.touches[1]);
+                touchRef.current = { midX: m.x, midY: m.y, dist: dist(e.touches[0], e.touches[1]) };
+                e.preventDefault();
+            }
+        };
+
+        const onTouchMove = (e: TouchEvent) => {
+            if (!touchRef.current) return;
+            e.preventDefault();
+            const rect = canvas.getBoundingClientRect();
+
+            if (e.touches.length === 1 && touchRef.current.dist === null) {
+                const dx = e.touches[0].clientX - touchRef.current.midX;
+                const dy = e.touches[0].clientY - touchRef.current.midY;
+                setPanX((px) => px + dx);
+                setPanY((py) => py + dy);
+                touchRef.current.midX = e.touches[0].clientX;
+                touchRef.current.midY = e.touches[0].clientY;
+            } else if (e.touches.length === 2 && touchRef.current.dist !== null) {
+                const newDist = dist(e.touches[0], e.touches[1]);
+                const m = mid(e.touches[0], e.touches[1]);
+                const scale = newDist / touchRef.current.dist;
+                const mx = m.x - rect.left;
+                const my = m.y - rect.top;
+                const dmx = m.x - touchRef.current.midX;
+                const dmy = m.y - touchRef.current.midY;
+                setZoom((z) => {
+                    const nz = parseFloat(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z * scale)).toFixed(2));
+                    setPanX((px) => mx - (mx - px) * (nz / z) + dmx);
+                    setPanY((py) => my - (my - py) * (nz / z) + dmy);
+                    return nz;
+                });
+                touchRef.current.dist = newDist;
+                touchRef.current.midX = m.x;
+                touchRef.current.midY = m.y;
+            }
+        };
+
+        const onTouchEnd = () => { touchRef.current = null; };
+
+        canvas.addEventListener('touchstart', onTouchStart, { passive: false });
+        canvas.addEventListener('touchmove', onTouchMove, { passive: false });
+        canvas.addEventListener('touchend', onTouchEnd);
+        canvas.addEventListener('touchcancel', onTouchEnd);
+        return () => {
+            canvas.removeEventListener('touchstart', onTouchStart);
+            canvas.removeEventListener('touchmove', onTouchMove);
+            canvas.removeEventListener('touchend', onTouchEnd);
+            canvas.removeEventListener('touchcancel', onTouchEnd);
+        };
     }, []);
 
     const clampZoom = (nz: number) => {
@@ -581,7 +650,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
         e.preventDefault();
         if (!canEdit) return;
         const blockType = e.dataTransfer.getData('application/chart-hedgehog-block');
-        const tpl = [...UML_BLOCK_TEMPLATES, ...SHAPE_BLOCK_TEMPLATES, ...TEXT_BLOCK_TEMPLATES, ...BPMN_BLOCK_TEMPLATES, ...ER_BLOCK_TEMPLATES].find((t) => t.type === blockType);
+        const tpl = [...UML_BLOCK_TEMPLATES, ...SHAPE_BLOCK_TEMPLATES, ...TEXT_BLOCK_TEMPLATES, ...BPMN_BLOCK_TEMPLATES, ...ER_BLOCK_TEMPLATES, ...MOCKUP_BLOCK_TEMPLATES].find((t) => t.type === blockType);
         if (!tpl) return;
         const pt = getCanvasPoint(e.clientX, e.clientY);
         const id = generateId(tpl.type);
@@ -817,6 +886,17 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
     const filteredUml = useMemo(() => { const q = shapeSearch.toLowerCase(); return q ? UML_BLOCK_TEMPLATES.filter((t) => t.name.toLowerCase().includes(q)) : UML_BLOCK_TEMPLATES; }, [shapeSearch]);
     const filteredBpmn = useMemo(() => { const q = shapeSearch.toLowerCase(); return q ? BPMN_BLOCK_TEMPLATES.filter((t) => t.name.toLowerCase().includes(q)) : BPMN_BLOCK_TEMPLATES; }, [shapeSearch]);
     const filteredEr = useMemo(() => { const q = shapeSearch.toLowerCase(); return q ? ER_BLOCK_TEMPLATES.filter((t) => t.name.toLowerCase().includes(q)) : ER_BLOCK_TEMPLATES; }, [shapeSearch]);
+    const filteredMockup = useMemo(() => { const q = shapeSearch.toLowerCase(); return q ? MOCKUP_BLOCK_TEMPLATES.filter((t) => t.name.toLowerCase().includes(q)) : MOCKUP_BLOCK_TEMPLATES; }, [shapeSearch]);
+
+    const addPreset = (preset: FlowchartPreset) => {
+        const canvas = canvasRef.current;
+        const rect = canvas?.getBoundingClientRect();
+        const cx = rect ? (rect.width / 2 - panX) / zoom : 100;
+        const cy = rect ? (rect.height / 2 - panY) / zoom : 100;
+        pushHistory();
+        setElements((cur) => [...cur, ...preset.generate(Math.round(cx - 70), Math.round(cy - 60))]);
+        setLeftPanel('none');
+    };
 
     // ── minimap ───────────────────────────────────────────────────────────────
     const minimapBounds = useMemo(() => getContentBounds(), [elements]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -946,7 +1026,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                             <button type="button" title="Текст и комментарии" className={`${styles.ToolBtn} ${leftPanel === 'text-panel' ? styles.ToolBtn_panel : ''}`} onClick={() => togglePanel('text-panel')}>
                                 <TextFieldsOutlinedIcon fontSize="small" />
                             </button>
-                            <button type="button" title="Шаблоны" className={`${styles.ToolBtn} ${['templates','uml','bpmn','er'].includes(leftPanel) ? styles.ToolBtn_panel : ''}`} onClick={() => togglePanel('templates')}>
+                            <button type="button" title="Шаблоны" className={`${styles.ToolBtn} ${['templates','uml','bpmn','er','mockup','flowchart'].includes(leftPanel) ? styles.ToolBtn_panel : ''}`} onClick={() => togglePanel('templates')}>
                                 <TableChartOutlinedIcon fontSize="small" />
                             </button>
                             <div className={styles.ToolbarDivider} />
@@ -988,6 +1068,8 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                         <button type="button" className={styles.PaletteItem} onClick={() => setLeftPanel('uml')}><TableChartOutlinedIcon fontSize="small" style={{ marginRight: 6 }} />UML</button>
                         <button type="button" className={styles.PaletteItem} onClick={() => setLeftPanel('bpmn')}>BPMN</button>
                         <button type="button" className={styles.PaletteItem} onClick={() => setLeftPanel('er')}>ER-диаграмма</button>
+                        <button type="button" className={styles.PaletteItem} onClick={() => setLeftPanel('mockup')}>Mockup / UI</button>
+                        <button type="button" className={styles.PaletteItem} onClick={() => setLeftPanel('flowchart')}>Пресеты</button>
                     </div>
                 ) : leftPanel === 'uml' ? (
                     <div className={styles.LeftPanel}>
@@ -1018,6 +1100,28 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                             <button key={tpl.type} type="button" className={`${styles.PaletteItem} ${styles[`PaletteItem_${tpl.type}`]}`} draggable onClick={() => addBlock(tpl)} onDragStart={(e) => onDragStart(e, tpl.type)}>{tpl.name}</button>
                         ))}
                         {filteredEr.length === 0 ? <Typography variant="body2" color="text.secondary">Ничего не найдено</Typography> : null}
+                    </div>
+                ) : leftPanel === 'mockup' ? (
+                    <div className={styles.LeftPanel}>
+                        <button type="button" className={styles.PanelBack} onClick={() => setLeftPanel('templates')}>← Библиотеки</button>
+                        <Typography variant="subtitle2" className={styles.PanelTitle}>Mockup / UI</Typography>
+                        <input className={styles.PanelSearch} placeholder="Поиск…" value={shapeSearch} onChange={(e) => setShapeSearch(e.target.value)} />
+                        {filteredMockup.map((tpl) => (
+                            <button key={tpl.type} type="button" className={`${styles.PaletteItem} ${styles[`PaletteItem_${tpl.type}`]}`} draggable onClick={() => addBlock(tpl)} onDragStart={(e) => onDragStart(e, tpl.type)}>{tpl.name}</button>
+                        ))}
+                        {filteredMockup.length === 0 ? <Typography variant="body2" color="text.secondary">Ничего не найдено</Typography> : null}
+                    </div>
+                ) : leftPanel === 'flowchart' ? (
+                    <div className={styles.LeftPanel}>
+                        <button type="button" className={styles.PanelBack} onClick={() => setLeftPanel('templates')}>← Библиотеки</button>
+                        <Typography variant="subtitle2" className={styles.PanelTitle}>Пресеты</Typography>
+                        <Typography variant="caption" color="text.secondary" style={{ marginBottom: 8, display: 'block' }}>Нажмите — вставит набор блоков в центр холста</Typography>
+                        {FLOWCHART_PRESETS.map((preset) => (
+                            <button key={preset.name} type="button" className={styles.PresetItem} onClick={() => addPreset(preset)}>
+                                <span className={styles.PresetName}>{preset.name}</span>
+                                <span className={styles.PresetDesc}>{preset.description}</span>
+                            </button>
+                        ))}
                     </div>
                 ) : leftPanel === 'line-config' ? (
                     <div className={styles.LeftPanel}>
@@ -1108,6 +1212,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                             const isShape = isShapeBlockType(block.type);
                             const isBpmn = isBpmnBlockType(block.type);
                             const isEr = isErBlockType(block.type);
+                            const isMockup = isMockupBlockType(block.type);
                             const isText = isTextBlock(block);
                             const isSelected = selectedIds.has(block.id);
                             const showAnchors = tool === 'line' && !isEditing;
@@ -1122,6 +1227,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                                         isShape ? styles.Block_shape : '',
                                         isBpmn ? styles.Block_bpmn : '',
                                         isEr ? styles.Block_er : '',
+                                        isMockup ? styles.Block_mockup : '',
                                         isSelected && !isEditing ? styles.Block_selected : '',
                                     ].filter(Boolean).join(' ')}
                                     style={{
@@ -1153,7 +1259,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                                                     onBlur={commitEdit}
                                                     onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); commitEdit(); } if (e.key === 'Escape') setEditing(null); }}
                                                 />
-                                                {!isShape && !isBpmn && !isEr ? (
+                                                {!isShape && !isBpmn && !isEr && !isMockup ? (
                                                     <textarea className={styles.BlockEditBody} value={editing.body}
                                                         onChange={(e) => setEditing({ ...editing, body: e.target.value })}
                                                         onBlur={commitEdit}
@@ -1177,6 +1283,8 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                                         <BpmnBlockContent block={block} />
                                     ) : isEr ? (
                                         <ErBlockContent block={block} />
+                                    ) : isMockup ? (
+                                        <MockupBlockContent block={block} />
                                     ) : isShape ? (
                                         <div className={styles.BlockShapeContent}>
                                             {block.type === 'diamond' ? (
@@ -1381,6 +1489,34 @@ function ErBlockContent({ block }: { block: DiagramCanvasBlock }) {
         <div className={styles.ErEntity}>
             <div className={styles.ErEntityHeader}>{block.title}</div>
             <pre className={styles.ErEntityBody}>{block.body}</pre>
+        </div>
+    );
+}
+
+function MockupBlockContent({ block }: { block: DiagramCanvasBlock }) {
+    if (block.type === 'mockup-button') {
+        return (
+            <div className={styles.MockupButton}>{block.title || 'Кнопка'}</div>
+        );
+    }
+    if (block.type === 'mockup-input') {
+        return (
+            <div className={styles.MockupInput}>{block.title || 'Placeholder…'}</div>
+        );
+    }
+    if (block.type === 'mockup-checkbox') {
+        return (
+            <div className={styles.MockupCheckbox}>
+                <span className={styles.MockupCheckboxBox} />
+                <span>{block.title || 'Чекбокс'}</span>
+            </div>
+        );
+    }
+    // mockup-card
+    return (
+        <div className={styles.MockupCard}>
+            <div className={styles.MockupCardHeader}>{block.title || 'Card'}</div>
+            <div className={styles.MockupCardBody}>{block.body || 'Content area'}</div>
         </div>
     );
 }

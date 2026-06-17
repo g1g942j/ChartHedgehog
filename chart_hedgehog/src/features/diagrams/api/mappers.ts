@@ -15,6 +15,7 @@ export function toApiDiagram(stored: StoredDiagram): ApiDiagram {
         updatedAt: stored.updatedAt,
         template: stored.template,
         content: stored.content,
+        preview: stored.preview,
         owner: {
             id: stored.ownerId,
             username: stored.ownerUsername,
@@ -106,6 +107,7 @@ export function mapDiagramToSummary(
         updatedAt: diagram.updatedAt,
         ownerUsername: diagram.owner?.username ?? '',
         role: resolveUserRole(diagram, currentUsername),
+        preview: diagram.preview,
     };
 }
 

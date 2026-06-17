@@ -18,6 +18,7 @@ export type ApiDiagram = {
     updatedAt?: string | null;
     template?: string | null;
     content?: string | null;
+    preview?: string | null;
     owner: ApiUser;
     participants?: ApiUser[];
     participantRoles?: ApiDiagramParticipantLink[];

@@ -16,6 +16,7 @@ export type DiagramSummary = {
     updatedAt?: string | null;
     ownerUsername: string;
     role: string;
+    preview?: string | null;
 };
 
 export async function fetchMyDiagrams(

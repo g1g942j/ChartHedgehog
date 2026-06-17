@@ -17,6 +17,7 @@ export type StoredDiagram = {
     updatedAt: string;
     template?: string | null;
     content?: string | null;
+    preview?: string | null;
     ownerUsername: string;
     ownerId: number;
     participantRoles: Array<{
