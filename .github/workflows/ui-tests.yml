@@ -13,6 +13,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Сборка и запуск backend
+        working-directory: backend
+        run: |
+          ./mvnw -q package -DskipTests
+          java -jar target/*.jar &
+          echo "Ожидание запуска backend..."
+          timeout 60 bash -c 'until curl -sf http://localhost:8080/actuator/health 2>/dev/null || curl -sf http://localhost:8080/api/auth/me 2>/dev/null; do sleep 2; done' || true
+
       - uses: actions/setup-node@v4
         with:
           node-version: "20"

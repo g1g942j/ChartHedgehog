@@ -146,18 +146,18 @@
 
 .ViewToggle {
     display: flex;
+    flex-shrink: 0;
     align-items: center;
     justify-content: center;
     width: 40px;
     height: 40px;
     padding: 0;
-    cursor: pointer;
     color: var(--text-secondary, #888);
+    cursor: pointer;
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 8px;
     transition: color 0.15s, border-color 0.15s, background 0.15s;
-    flex-shrink: 0;
 
     &:hover {
         color: var(--primary);
@@ -191,10 +191,10 @@
     flex-direction: column;
     gap: 8px;
     padding: 0;
+    overflow: hidden;
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 10px;
-    overflow: hidden;
     transition: border-color 0.15s, box-shadow 0.15s;
 
     &:hover {
@@ -232,9 +232,9 @@
 
 .GridItemName {
     overflow: hidden;
+    text-overflow: ellipsis;
     font-size: 13px;
     font-weight: 600;
-    white-space: nowrap;
-    text-overflow: ellipsis;
     color: var(--text-color);
+    white-space: nowrap;
 }

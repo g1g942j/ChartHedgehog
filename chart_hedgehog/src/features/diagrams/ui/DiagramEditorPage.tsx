@@ -40,8 +40,8 @@ import { Typography } from '@/shared/ui/Typography';
 import styles from './DiagramEditorPage.module.scss';
 
 import {
+    type AnchorSide,
     BPMN_BLOCK_TEMPLATES,
-    DIAGRAM_TEMPLATES,
     type DiagramBlockTemplate,
     type DiagramCanvasBlock,
     type DiagramEditorState,
@@ -54,7 +54,6 @@ import {
     isBpmnBlockType,
     isErBlockType,
     isShapeBlockType,
-    type AnchorSide,
     type LineEnding,
     type LineStyle,
     resolveLineCoords,
@@ -195,7 +194,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
 
     // ── canvas state ──────────────────────────────────────────────────────────
     const [elements, setElements] = useState<DiagramElement[]>(initialEditorState.blocks);
-    const [template, setTemplate] = useState(initialEditorState.template ?? 'uml');
+    const [template, _setTemplate] = useState(initialEditorState.template ?? 'uml');
     const [zoom, setZoom] = useState(1);
     const [panX, setPanX] = useState(40);
     const [panY, setPanY] = useState(40);
@@ -343,7 +342,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
         };
         document.addEventListener('keydown', onKey);
         return () => document.removeEventListener('keydown', onKey);
-    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    }, []);  
 
     // ── save ──────────────────────────────────────────────────────────────────
     const saveNow = useCallback(async (els: DiagramElement[]) => {
@@ -599,7 +598,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
 
         const moveIds: Set<string> = selectedIds.has(block.id) ? new Set(selectedIds) : new Set([block.id]);
         if (e.shiftKey) {
-            setSelectedIds((prev) => { const n = new Set(prev); n.has(block.id) ? n.delete(block.id) : n.add(block.id); return n; });
+            setSelectedIds((prev) => { const n = new Set(prev); if (n.has(block.id)) { n.delete(block.id); } else { n.add(block.id); } return n; });
             return;
         }
         if (!selectedIds.has(block.id)) setSelectedIds(moveIds);
@@ -702,14 +701,14 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
         const sd = (s: LineStyle) => s === 'dashed' ? 'stroke-dasharray="10,5"' : s === 'dotted' ? 'stroke-dasharray="3,5"' : '';
         const svgLines = elements.filter(isLine).map((l) => {
             const c = resolveLineCoords(l, blockMap);
-            const stroke = l.strokeColor ?? '#000';
+            const stroke = esc(l.strokeColor ?? '#000');
             const sw = l.strokeWidth ?? 2;
             return `<line x1="${c.x1}" y1="${c.y1}" x2="${c.x2}" y2="${c.y2}" stroke="${stroke}" stroke-width="${sw}" ${sd(l.style)} ${em(l.endEnding,'e') ? `marker-end="${em(l.endEnding,'e')}"`:''} ${em(l.startEnding,'s') ? `marker-start="${em(l.startEnding,'s')}"`:''} />`;
         }).join('\n');
         const svgPencil = elements.filter(isPencil).map((p) => `<path d="${pointsToPath(p.points)}" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`).join('\n');
         const svgBlocks = elements.filter(isBlock).map((b) => {
             const x = b.x, y = b.y, w = b.width, h = b.height;
-            const sc = b.strokeColor ?? '#1a56db', fc = b.fillColor;
+            const sc = esc(b.strokeColor ?? '#1a56db'), fc = b.fillColor ? esc(b.fillColor) : undefined;
             if (b.type === 'text') return `<text x="${x+w/2}" y="${y+h/2}" text-anchor="middle" dominant-baseline="middle" font-size="${b.fontSize??14}" fill="${sc}">${esc(b.title)}</text>`;
             if (b.type === 'comment') return `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${fc??'#fefce8'}" stroke="#eab308" stroke-width="1.5" rx="8"/><text x="${x+w/2}" y="${y+h/2}" text-anchor="middle" dominant-baseline="middle" font-size="13" fill="#78350f">${esc(b.title)}</text>`;
             if (b.type === 'bpmn-task') return `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${fc??'#eff6ff'}" stroke="${sc??'#3b82f6'}" stroke-width="2" rx="12"/><text x="${x+w/2}" y="${y+h/2}" text-anchor="middle" dominant-baseline="middle" font-size="13" fill="#1e3a8a">${esc(b.title)}</text>`;
@@ -1424,15 +1423,16 @@ export function DiagramEditorLoader(props: DiagramEditorLoaderProps) {
 
     if (q.error || !q.data) {
         return (
-            <div style={{ padding: 32 }}>
+            <div style={{ padding: 32, display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 480 }}>
                 <Alert severity="error">{q.error instanceof Error ? q.error.message : t.diagrams.saveContentError}</Alert>
+                <Link href="/diagrams" style={{ fontSize: 14 }}>← {t.common.backToList}</Link>
             </div>
         );
     }
 
     return (
         <DiagramEditorPage
-            key={`${diagramId}:${q.data.template ?? ''}:${q.data.blocks.length}`}
+            key={`${diagramId}:${q.data.template ?? ''}`}
             diagramId={diagramId}
             diagramName={diagramName}
             currentUserRole={currentUserRole}
