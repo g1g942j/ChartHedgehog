@@ -5,7 +5,7 @@ import { createDriver } from "../driver-factory.js";
 import { loginAs } from "../auth-helper.js";
 import { DiagramsPage } from "../pages/diagrams.page.js";
 import { ParticipantsPage } from "../pages/participants.page.js";
-import { waitUrl } from "../waits.js";
+import { waitUrl, waitVisible } from "../waits.js";
 import { getAppUrl } from "../base-url.js";
 
 async function createDiagramAndGetId(
@@ -193,8 +193,9 @@ describe("Страница участников — добавление и уд
       return;
     }
     const removeBtn = await page.removeButtonForRow(row);
-    await driver.executeScript("window.confirm = () => true;");
     await removeBtn.click();
+    const okBtn = await waitVisible(driver, By.css('[data-testid="confirm-modal-ok"]'), 5_000);
+    await okBtn.click();
     await driver.sleep(1_000);
     const rows = await driver.findElements(
       By.xpath(`//li[.//*[contains(normalize-space(.), '@${secondUser}')]]`),

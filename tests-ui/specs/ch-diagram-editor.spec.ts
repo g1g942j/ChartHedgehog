@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { fileURLToPath } from "node:url";
 import { after, before, describe, it } from "mocha";
 import { By, Key } from "selenium-webdriver";
 import { createDriver } from "../driver-factory.js";
@@ -6,6 +7,11 @@ import { loginAs } from "../auth-helper.js";
 import { DiagramsPage } from "../pages/diagrams.page.js";
 import { DiagramDetailPage } from "../pages/diagram-detail.page.js";
 import { waitUrl, waitVisible, waitGone } from "../waits.js";
+
+/** Абсолютный путь до файла-фикстуры в tests-ui/fixtures */
+function fixturePath(name: string): string {
+  return fileURLToPath(new URL(`../fixtures/${name}`, import.meta.url));
+}
 
 async function createAndOpen(
   driver: import("selenium-webdriver").WebDriver,
@@ -1595,5 +1601,173 @@ describe("Список диаграмм — Превью SVG в grid-виде", 
 
     const emojiSpans = await driver.findElements(By.css(`[class*="GridItemIcon"]`));
     assert.ok(emojiSpans.length > 0, "Пустая диаграмма должна показывать emoji-заглушку (GridItemIcon)");
+  });
+});
+
+// ─── Изображения на холсте ────────────────────────────────────────────────────
+
+describe("Редактор диаграмм — Изображения на холсте", () => {
+  let driver: import("selenium-webdriver").WebDriver;
+  let diagramId: number;
+
+  before(async function () {
+    this.timeout(120_000);
+    driver = await createDriver();
+    await loginAs(driver);
+    diagramId = await createAndOpen(driver, `UI_Image_${Date.now()}`);
+  });
+
+  after(async () => { await driver?.quit(); });
+
+  it("кнопка 'Вставить изображение' есть в тулбаре", async () => {
+    const page = new DiagramDetailPage(driver);
+    await page.goto(diagramId);
+    const btn = await waitVisible(driver, By.css(`button[title="Вставить изображение"]`), 10_000);
+    assert.ok(await btn.isDisplayed());
+  });
+
+  it("загрузка PNG создаёт блок-изображение на холсте", async () => {
+    const page = new DiagramDetailPage(driver);
+    await page.goto(diagramId);
+
+    const input = await waitVisible(driver, By.css(`[data-testid="image-input"]`), 10_000);
+    await input.sendKeys(fixturePath("sample.png"));
+
+    const imgBlock = await waitVisible(
+      driver,
+      By.css(`[data-block="true"] img[class*="ImageBlockContent"]`),
+      8_000,
+    );
+    assert.ok(await imgBlock.isDisplayed(), "Должен появиться блок-изображение");
+  });
+
+  it("src блока-изображения — это data URL", async () => {
+    const page = new DiagramDetailPage(driver);
+    await page.goto(diagramId);
+
+    const input = await waitVisible(driver, By.css(`[data-testid="image-input"]`), 10_000);
+    await input.sendKeys(fixturePath("sample.png"));
+    await waitVisible(driver, By.css(`img[class*="ImageBlockContent"]`), 8_000);
+
+    const src = await driver.executeScript<string | null>(`
+      const img = document.querySelector('img[class*="ImageBlockContent"]');
+      return img ? img.getAttribute('src') : null;
+    `);
+    assert.ok(src !== null && src.startsWith("data:image/"), "src должен быть data URL изображения");
+  });
+});
+
+// ─── Импорт draw.io ────────────────────────────────────────────────────────────
+
+describe("Редактор диаграмм — Импорт draw.io", () => {
+  let driver: import("selenium-webdriver").WebDriver;
+  let diagramId: number;
+
+  before(async function () {
+    this.timeout(120_000);
+    driver = await createDriver();
+    await loginAs(driver);
+    diagramId = await createAndOpen(driver, `UI_Drawio_${Date.now()}`);
+  });
+
+  after(async () => { await driver?.quit(); });
+
+  it("в библиотеках есть пункт 'Импорт draw.io'", async () => {
+    const page = new DiagramDetailPage(driver);
+    await page.goto(diagramId);
+    await (await page.toolButton("Шаблоны")).click();
+    const item = await waitVisible(driver, By.xpath(`//button[contains(normalize-space(.), 'Импорт draw.io')]`), 5_000);
+    assert.ok(await item.isDisplayed());
+  });
+
+  it("импорт .drawio добавляет блоки на холст", async () => {
+    const page = new DiagramDetailPage(driver);
+    await page.goto(diagramId);
+
+    const input = await waitVisible(driver, By.css(`[data-testid="drawio-input"]`), 10_000);
+    await input.sendKeys(fixturePath("sample.drawio"));
+
+    // в фикстуре 3 вершины (Старт, Решение, Конец)
+    await driver.wait(async () => {
+      const blocks = await driver.findElements(By.css(`[data-block="true"]`));
+      return blocks.length >= 3;
+    }, 8_000, "После импорта draw.io должно появиться минимум 3 блока");
+
+    const blocks = await driver.findElements(By.css(`[data-block="true"]`));
+    assert.ok(blocks.length >= 3, `Ожидалось ≥3 блока, найдено: ${blocks.length}`);
+  });
+
+  it("импорт .drawio переносит подписи блоков (Старт)", async () => {
+    const page = new DiagramDetailPage(driver);
+    await page.goto(diagramId);
+
+    const input = await waitVisible(driver, By.css(`[data-testid="drawio-input"]`), 10_000);
+    await input.sendKeys(fixturePath("sample.drawio"));
+    await driver.wait(async () => {
+      const blocks = await driver.findElements(By.css(`[data-block="true"]`));
+      return blocks.length >= 3;
+    }, 8_000);
+
+    const startBlock = await driver.findElements(By.xpath(`//*[@data-block='true'][contains(normalize-space(.), 'Старт')]`));
+    assert.ok(startBlock.length > 0, "Должен быть блок с подписью 'Старт' из draw.io");
+  });
+
+  it("импорт .drawio создаёт линии-коннекторы между блоками", async () => {
+    const page = new DiagramDetailPage(driver);
+    await page.goto(diagramId);
+
+    const input = await waitVisible(driver, By.css(`[data-testid="drawio-input"]`), 10_000);
+    await input.sendKeys(fixturePath("sample.drawio"));
+    await driver.wait(async () => {
+      const blocks = await driver.findElements(By.css(`[data-block="true"]`));
+      return blocks.length >= 3;
+    }, 8_000);
+    await driver.sleep(300);
+
+    const lines = await driver.findElements(By.css(`svg line[x1]`));
+    assert.ok(lines.length >= 2, `Ожидалось ≥2 коннектора из draw.io, найдено: ${lines.length}`);
+  });
+});
+
+// ─── Модалки подтверждения (вместо window.confirm) ────────────────────────────
+
+describe("Редактор диаграмм — Модалка подтверждения удаления", () => {
+  let driver: import("selenium-webdriver").WebDriver;
+  let diagramId: number;
+
+  before(async function () {
+    this.timeout(120_000);
+    driver = await createDriver();
+    await loginAs(driver);
+    diagramId = await createAndOpen(driver, `UI_ConfirmModal_${Date.now()}`);
+  });
+
+  after(async () => { await driver?.quit(); });
+
+  it("клик по 'Удалить диаграмму' открывает модалку, а не window.confirm", async () => {
+    const page = new DiagramDetailPage(driver);
+    await page.goto(diagramId);
+
+    // открыть меню настроек (⋮)
+    await (await waitVisible(driver, By.css(`button[title="Настройки"]`), 10_000)).click();
+    await (await waitVisible(driver, By.xpath(`//button[contains(normalize-space(.), 'Удалить диаграмму')]`), 5_000)).click();
+
+    const okBtn = await waitVisible(driver, By.css(`[data-testid="confirm-modal-ok"]`), 5_000);
+    assert.ok(await okBtn.isDisplayed(), "Должна появиться кнопка подтверждения в модалке");
+  });
+
+  it("отмена в модалке оставляет диаграмму на месте", async () => {
+    const page = new DiagramDetailPage(driver);
+    await page.goto(diagramId);
+
+    await (await waitVisible(driver, By.css(`button[title="Настройки"]`), 10_000)).click();
+    await (await waitVisible(driver, By.xpath(`//button[contains(normalize-space(.), 'Удалить диаграмму')]`), 5_000)).click();
+    await waitVisible(driver, By.css(`[data-testid="confirm-modal-ok"]`), 5_000);
+
+    // нажать «Отмена»
+    await (await waitVisible(driver, By.xpath(`//button[normalize-space(.) = 'Отмена']`), 5_000)).click();
+    await driver.sleep(300);
+
+    assert.ok((await driver.getCurrentUrl()).includes(`/diagrams/${diagramId}`), "После отмены остаёмся в редакторе");
   });
 });

@@ -120,8 +120,13 @@ export class DiagramDetailPage {
   }
 
   async confirmDeleteInDialog(): Promise<void> {
-    await this.driver.executeScript("window.confirm = () => true;");
     await (await this.deleteButton()).click();
+    const okBtn = await waitVisible(
+      this.driver,
+      By.css('[data-testid="confirm-modal-ok"]'),
+      5_000,
+    );
+    await okBtn.click();
   }
 
   // ── left toolbar ──────────────────────────────────────────────────────────
