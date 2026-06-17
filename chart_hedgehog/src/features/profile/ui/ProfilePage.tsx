@@ -8,6 +8,7 @@ import { useLocale } from '@/shared/i18n';
 import { useToast } from '@/shared/toast';
 import { Alert } from '@/shared/ui/Alert';
 import { Button } from '@/shared/ui/Button';
+import { ConfirmModal } from '@/shared/ui/ConfirmModal';
 import { Skeleton } from '@/shared/ui/Skeleton';
 import { TextField } from '@/shared/ui/TextField';
 import { Typography } from '@/shared/ui/Typography';
@@ -43,6 +44,7 @@ export function ProfilePage() {
     const setFullName = (v: string) => setFullNameDraft(v);
 
     const toast = useToast();
+    const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
     const [oldPassword, setOldPassword] = useState('');
     const [newPassword, setNewPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
@@ -91,11 +93,8 @@ export function ProfilePage() {
         }
     };
 
-    const handleDeactivate = async () => {
-        if (!window.confirm(t.profile.deleteConfirm)) {
-            return;
-        }
-
+    const handleDeactivateConfirm = async () => {
+        setDeleteConfirmOpen(false);
         try {
             await deactivateAccount();
             router.replace('/');
@@ -256,13 +255,20 @@ export function ProfilePage() {
                             color="error"
                             loading={isDeactivatingAccount}
                             disabled={isUpdatingProfile || isChangingPassword}
-                            onClick={() => void handleDeactivate()}
+                            onClick={() => setDeleteConfirmOpen(true)}
                         >
                             {t.profile.deleteAccount}
                         </Button>
                     </div>
                 </section>
             </main>
+            <ConfirmModal
+                open={deleteConfirmOpen}
+                message={t.profile.deleteConfirm}
+                dangerous
+                onConfirm={() => void handleDeactivateConfirm()}
+                onCancel={() => setDeleteConfirmOpen(false)}
+            />
         </>
     );
 }

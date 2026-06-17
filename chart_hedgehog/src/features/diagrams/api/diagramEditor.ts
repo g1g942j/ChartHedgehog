@@ -27,7 +27,8 @@ export type DiagramBlockType =
     | 'mockup-button'
     | 'mockup-input'
     | 'mockup-checkbox'
-    | 'mockup-card';
+    | 'mockup-card'
+    | 'image';
 
 export const SHAPE_BLOCK_TYPES: DiagramBlockType[] = [
     'rectangle',
@@ -86,6 +87,8 @@ export type DiagramCanvasBlock = {
     strokeColor?: string;
     strokeWidth?: number;
     fontSize?: number;
+    /** data URL для блоков типа 'image' */
+    src?: string;
 };
 
 export type DiagramLineElement = {

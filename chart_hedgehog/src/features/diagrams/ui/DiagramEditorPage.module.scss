@@ -1186,6 +1186,23 @@
     box-shadow: none;
 }
 
+.Block_image {
+    padding: 0;
+    overflow: hidden;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+}
+
+.ImageBlockContent {
+    display: block;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    user-select: none;
+    object-fit: fill;
+}
+
 .MockupButton {
     display: flex;
     align-items: center;

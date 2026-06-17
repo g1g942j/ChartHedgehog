@@ -11,6 +11,8 @@ const ru: AppTranslations = {
         participants: 'Участники',
         diagram: 'Диаграмма',
         backToList: 'К списку',
+        confirm: 'Подтвердить',
+        cancel: 'Отмена',
         theme: {
             light: 'Светлая',
             dark: 'Темная',
@@ -144,6 +146,8 @@ const en: AppTranslations = {
         participants: 'Participants',
         diagram: 'Diagram',
         backToList: 'Back to list',
+        confirm: 'Confirm',
+        cancel: 'Cancel',
         theme: {
             light: 'Light',
             dark: 'Dark',

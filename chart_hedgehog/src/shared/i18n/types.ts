@@ -11,6 +11,8 @@ export type AppTranslations = {
         participants: string;
         diagram: string;
         backToList: string;
+        confirm: string;
+        cancel: string;
         theme: {
             light: string;
             dark: string;

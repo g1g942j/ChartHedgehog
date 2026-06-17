@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -18,6 +18,11 @@ import {
 } from '../api/participants';
 import type { AssignableRole } from '../constants/roles';
 
+type PendingConfirm = {
+    message: string;
+    resolve: (ok: boolean) => void;
+};
+
 export function useDiagramParticipants(
     diagramId: number,
     canManage: boolean,
@@ -33,6 +38,8 @@ export function useDiagramParticipants(
     const [isAdding, setIsAdding] = useState(false);
     const [addError, setAddError] = useState<string | null>(null);
     const [actionError, setActionError] = useState<string | null>(null);
+    const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null);
+    const resolveRef = useRef<((ok: boolean) => void) | null>(null);
 
     const currentUserQuery = useQuery({
         queryKey: ['currentUser'],
@@ -74,6 +81,24 @@ export function useDiagramParticipants(
         });
         await queryClient.invalidateQueries({ queryKey: ['diagram', diagramId] });
         await queryClient.invalidateQueries({ queryKey: ['myDiagrams'] });
+    };
+
+    const requestConfirm = (message: string): Promise<boolean> =>
+        new Promise((resolve) => {
+            resolveRef.current = resolve;
+            setPendingConfirm({ message, resolve });
+        });
+
+    const handleConfirmOk = () => {
+        resolveRef.current?.(true);
+        resolveRef.current = null;
+        setPendingConfirm(null);
+    };
+
+    const handleConfirmCancel = () => {
+        resolveRef.current?.(false);
+        resolveRef.current = null;
+        setPendingConfirm(null);
     };
 
     const handleAdd = async () => {
@@ -120,7 +145,6 @@ export function useDiagramParticipants(
         }
 
         const isOwnerTransfer = role === 'OWNER';
-
         const fromLabel = t.roles[fromRole] ?? fromRole;
         const toLabel = t.roles[role] ?? role;
 
@@ -128,7 +152,7 @@ export function useDiagramParticipants(
             ? `Вы передаёте права владельца пользователю ${displayName}. Вы станете редактором и потеряете управление диаграммой. Продолжить?`
             : `Изменить роль ${displayName} с «${fromLabel}» на «${toLabel}»?`;
 
-        if (!window.confirm(confirmMessage)) {
+        if (!await requestConfirm(confirmMessage)) {
             return;
         }
 
@@ -146,8 +170,7 @@ export function useDiagramParticipants(
     };
 
     const handleRemove = async (userId: number, displayName: string) => {
-        const confirmed = window.confirm(t.participants.removeConfirm(displayName));
-        if (!confirmed) {
+        if (!await requestConfirm(t.participants.removeConfirm(displayName))) {
             return;
         }
 
@@ -183,5 +206,11 @@ export function useDiagramParticipants(
         handleAdd,
         handleRoleChange,
         handleRemove,
+        confirmModal: {
+            open: pendingConfirm !== null,
+            message: pendingConfirm?.message ?? '',
+            onConfirm: handleConfirmOk,
+            onCancel: handleConfirmCancel,
+        },
     };
 }

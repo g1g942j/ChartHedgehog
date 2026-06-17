@@ -2,6 +2,7 @@ export type { AlertProps } from './Alert';
 export { Alert } from './Alert';
 export type { ButtonProps } from './Button';
 export { Button } from './Button';
+export { ConfirmModal } from './ConfirmModal';
 export type { SelectOption, SelectProps } from './Select';
 export { Select } from './Select';
 export { Skeleton } from './Skeleton';

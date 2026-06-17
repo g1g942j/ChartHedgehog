@@ -8,6 +8,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useLocale } from '@/shared/i18n';
 import { Alert } from '@/shared/ui/Alert';
 import { Button } from '@/shared/ui/Button';
+import { ConfirmModal } from '@/shared/ui/ConfirmModal';
 import { TextField } from '@/shared/ui/TextField';
 import { Typography } from '@/shared/ui/Typography';
 
@@ -31,6 +32,7 @@ function DiagramSettingsForm(props: DiagramSettingsSectionProps) {
     const [isSaving, setIsSaving] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [confirmOpen, setConfirmOpen] = useState(false);
 
     if (!canRename && !canDelete) {
         return null;
@@ -62,11 +64,8 @@ function DiagramSettingsForm(props: DiagramSettingsSectionProps) {
         }
     };
 
-    const handleDelete = async () => {
-        if (!canDelete || !window.confirm(t.diagrams.deleteConfirm(diagramName))) {
-            return;
-        }
-
+    const handleDeleteConfirm = async () => {
+        setConfirmOpen(false);
         setIsDeleting(true);
         setError(null);
         try {
@@ -85,6 +84,13 @@ function DiagramSettingsForm(props: DiagramSettingsSectionProps) {
 
     return (
         <section className={styles.Card}>
+            <ConfirmModal
+                open={confirmOpen}
+                message={t.diagrams.deleteConfirm(diagramName)}
+                dangerous
+                onConfirm={() => void handleDeleteConfirm()}
+                onCancel={() => setConfirmOpen(false)}
+            />
             <Typography variant="subtitle1">{t.diagrams.settingsTitle}</Typography>
             {error ? <Alert severity="error">{error}</Alert> : null}
             <div className={styles.SettingsRow}>
@@ -111,7 +117,7 @@ function DiagramSettingsForm(props: DiagramSettingsSectionProps) {
                             color="error"
                             loading={isDeleting}
                             disabled={isSaving}
-                            onClick={() => void handleDelete()}
+                            onClick={() => setConfirmOpen(true)}
                         >
                             {t.diagrams.deleteDiagram}
                         </Button>

@@ -8,6 +8,7 @@ import MuiTextField from '@mui/material/TextField';
 import { useLocale } from '@/shared/i18n';
 import { Alert } from '@/shared/ui/Alert';
 import { Button } from '@/shared/ui/Button';
+import { ConfirmModal } from '@/shared/ui/ConfirmModal';
 import { Select, type SelectOption } from '@/shared/ui/Select';
 import { Typography } from '@/shared/ui/Typography';
 
@@ -64,6 +65,7 @@ export function DiagramParticipantsSection(props: DiagramParticipantsSectionProp
         handleAdd,
         handleRoleChange,
         handleRemove,
+        confirmModal,
     } = useDiagramParticipants(diagramId, canManage);
 
     if (isLoading) {
@@ -76,6 +78,7 @@ export function DiagramParticipantsSection(props: DiagramParticipantsSectionProp
 
     return (
         <section className={styles.Section}>
+            <ConfirmModal {...confirmModal} dangerous />
             {actionError ? <Alert severity="error">{actionError}</Alert> : null}
 
             {canManage ? (

@@ -14,6 +14,7 @@ import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
 import GestureOutlinedIcon from '@mui/icons-material/GestureOutlined';
 import GridOnOutlinedIcon from '@mui/icons-material/GridOnOutlined';
 import GroupsOutlinedIcon from '@mui/icons-material/GroupsOutlined';
+import ImageOutlinedIcon from '@mui/icons-material/ImageOutlined';
 import LightModeOutlinedIcon from '@mui/icons-material/LightModeOutlined';
 import MoreVertOutlinedIcon from '@mui/icons-material/MoreVertOutlined';
 import NearMeOutlinedIcon from '@mui/icons-material/NearMeOutlined';
@@ -32,6 +33,7 @@ import { useThemeMode } from '@/shared/theme';
 import { useToast } from '@/shared/toast';
 import { Alert } from '@/shared/ui/Alert';
 import { Button } from '@/shared/ui/Button';
+import { ConfirmModal } from '@/shared/ui/ConfirmModal';
 import { Select, type SelectOption } from '@/shared/ui/Select';
 import { Skeleton } from '@/shared/ui/Skeleton';
 import { TextField } from '@/shared/ui/TextField';
@@ -192,6 +194,8 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
     const queryClient = useQueryClient();
     const canvasRef = useRef<HTMLDivElement | null>(null);
     const canvasContentRef = useRef<HTMLDivElement | null>(null);
+    const imageInputRef = useRef<HTMLInputElement | null>(null);
+    const drawioInputRef = useRef<HTMLInputElement | null>(null);
 
     const canEdit = currentUserRole === 'OWNER' || currentUserRole === 'EDITOR';
     const canDelete = currentUserRole === 'OWNER';
@@ -255,6 +259,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
     const [renaming, setRenaming] = useState(diagramName);
     const [isRenaming, setIsRenaming] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
+    const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
     const [isPublic, setIsPublic] = useState(false);
     const [linkCopied, setLinkCopied] = useState(false);
 
@@ -632,7 +637,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
 
     // ── editing ───────────────────────────────────────────────────────────────
     const startEditing = (block: DiagramCanvasBlock) => {
-        if (!canEdit || tool !== 'select') return;
+        if (!canEdit || tool !== 'select' || block.type === 'image') return;
         setEditing({ id: block.id, title: block.title, body: block.body });
     };
     const commitEdit = () => {
@@ -778,6 +783,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
         const svgBlocks = elements.filter(isBlock).map((b) => {
             const x = b.x, y = b.y, w = b.width, h = b.height;
             const sc = esc(b.strokeColor ?? '#1a56db'), fc = b.fillColor ? esc(b.fillColor) : undefined;
+            if (b.type === 'image') return b.src ? `<image href="${b.src}" x="${x}" y="${y}" width="${w}" height="${h}" preserveAspectRatio="none"/>` : '';
             if (b.type === 'text') return `<text x="${x+w/2}" y="${y+h/2}" text-anchor="middle" dominant-baseline="middle" font-size="${b.fontSize??14}" fill="${sc}">${esc(b.title)}</text>`;
             if (b.type === 'comment') return `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${fc??'#fefce8'}" stroke="#eab308" stroke-width="1.5" rx="8"/><text x="${x+w/2}" y="${y+h/2}" text-anchor="middle" dominant-baseline="middle" font-size="13" fill="#78350f">${esc(b.title)}</text>`;
             if (b.type === 'bpmn-task') return `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${fc??'#eff6ff'}" stroke="${sc??'#3b82f6'}" stroke-width="2" rx="12"/><text x="${x+w/2}" y="${y+h/2}" text-anchor="middle" dominant-baseline="middle" font-size="13" fill="#1e3a8a">${esc(b.title)}</text>`;
@@ -863,8 +869,8 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
         finally { setIsRenaming(false); }
     };
 
-    const handleDelete = async () => {
-        if (!window.confirm(t.diagrams.deleteConfirm(renaming))) return;
+    const handleDeleteConfirm = async () => {
+        setDeleteConfirmOpen(false);
         setIsDeleting(true);
         try {
             await deleteDiagram(diagramId);
@@ -888,14 +894,58 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
     const filteredEr = useMemo(() => { const q = shapeSearch.toLowerCase(); return q ? ER_BLOCK_TEMPLATES.filter((t) => t.name.toLowerCase().includes(q)) : ER_BLOCK_TEMPLATES; }, [shapeSearch]);
     const filteredMockup = useMemo(() => { const q = shapeSearch.toLowerCase(); return q ? MOCKUP_BLOCK_TEMPLATES.filter((t) => t.name.toLowerCase().includes(q)) : MOCKUP_BLOCK_TEMPLATES; }, [shapeSearch]);
 
+    const viewportCenter = () => {
+        const rect = canvasRef.current?.getBoundingClientRect();
+        return {
+            x: rect ? (rect.width / 2 - panX) / zoom : 100,
+            y: rect ? (rect.height / 2 - panY) / zoom : 100,
+        };
+    };
+
     const addPreset = (preset: FlowchartPreset) => {
-        const canvas = canvasRef.current;
-        const rect = canvas?.getBoundingClientRect();
-        const cx = rect ? (rect.width / 2 - panX) / zoom : 100;
-        const cy = rect ? (rect.height / 2 - panY) / zoom : 100;
+        const c = viewportCenter();
         pushHistory();
-        setElements((cur) => [...cur, ...preset.generate(Math.round(cx - 70), Math.round(cy - 60))]);
+        setElements((cur) => [...cur, ...preset.generate(Math.round(c.x - 70), Math.round(c.y - 60))]);
         setLeftPanel('none');
+    };
+
+    // ── image insert ────────────────────────────────────────────────────────────
+    const insertImageFile = (file: File) => {
+        if (!file.type.startsWith('image/')) { toast.error('Можно вставить только изображение'); return; }
+        const reader = new FileReader();
+        reader.onload = () => {
+            const src = typeof reader.result === 'string' ? reader.result : '';
+            if (!src) return;
+            const img = new Image();
+            img.onload = () => {
+                const maxDim = 320;
+                let w = img.width || 200, h = img.height || 150;
+                if (w > maxDim || h > maxDim) { const s = maxDim / Math.max(w, h); w = Math.round(w * s); h = Math.round(h * s); }
+                const c = viewportCenter();
+                pushHistory();
+                setElements((cur) => [...cur, {
+                    id: generateId('image'), type: 'image', title: file.name, body: '', src,
+                    x: Math.round(c.x - w / 2), y: Math.round(c.y - h / 2), width: w, height: h,
+                }]);
+            };
+            img.src = src;
+        };
+        reader.readAsDataURL(file);
+    };
+
+    // ── draw.io import ──────────────────────────────────────────────────────────
+    const importDrawioFile = async (file: File) => {
+        try {
+            const text = await file.text();
+            const { parseDrawioToElements } = await import('../api/drawioImport');
+            const imported = await parseDrawioToElements(text);
+            pushHistory();
+            setElements((cur) => [...cur, ...imported]);
+            setLeftPanel('none');
+            toast.success(`Импортировано элементов: ${imported.length}`);
+        } catch (err) {
+            toast.error(err instanceof Error ? err.message : 'Ошибка импорта draw.io');
+        }
     };
 
     // ── minimap ───────────────────────────────────────────────────────────────
@@ -905,6 +955,24 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
     // ─────────────────────────────────────────────────────────────────────────
     return (
         <div className={styles.Page}>
+
+            {/* ── hidden file inputs ── */}
+            <input
+                ref={imageInputRef}
+                type="file"
+                accept="image/*"
+                hidden
+                data-testid="image-input"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) insertImageFile(f); e.target.value = ''; }}
+            />
+            <input
+                ref={drawioInputRef}
+                type="file"
+                accept=".drawio,.xml,application/xml,text/xml"
+                hidden
+                data-testid="drawio-input"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) void importDrawioFile(f); e.target.value = ''; }}
+            />
 
             {/* ── TOP BAR ── */}
             <header className={styles.TopBar}>
@@ -965,13 +1033,21 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                             <GroupsOutlinedIcon fontSize="small" />{t.common.participants}
                         </Button>
                         {canDelete ? (
-                            <Button variant="outlined" color="error" size="small" loading={isDeleting} disabled={isRenaming} style={{ justifyContent: 'flex-start', gap: 8 }} onClick={() => void handleDelete()}>
+                            <Button variant="outlined" color="error" size="small" loading={isDeleting} disabled={isRenaming} style={{ justifyContent: 'flex-start', gap: 8 }} onClick={() => setDeleteConfirmOpen(true)}>
                                 <DeleteOutlineOutlinedIcon fontSize="small" />{t.diagrams.deleteDiagram}
                             </Button>
                         ) : null}
                     </aside>
                 </>
             ) : null}
+
+            <ConfirmModal
+                open={deleteConfirmOpen}
+                message={t.diagrams.deleteConfirm(renaming)}
+                dangerous
+                onConfirm={() => void handleDeleteConfirm()}
+                onCancel={() => setDeleteConfirmOpen(false)}
+            />
 
             {/* ── EXPORT MODAL ── */}
             {exportOpen ? (
@@ -1029,6 +1105,9 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                             <button type="button" title="Шаблоны" className={`${styles.ToolBtn} ${['templates','uml','bpmn','er','mockup','flowchart'].includes(leftPanel) ? styles.ToolBtn_panel : ''}`} onClick={() => togglePanel('templates')}>
                                 <TableChartOutlinedIcon fontSize="small" />
                             </button>
+                            <button type="button" title="Вставить изображение" className={styles.ToolBtn} onClick={() => imageInputRef.current?.click()}>
+                                <ImageOutlinedIcon fontSize="small" />
+                            </button>
                             <div className={styles.ToolbarDivider} />
                             <button type="button" title={snapToGrid ? 'Сетка вкл.' : 'Сетка выкл.'} className={`${styles.ToolBtn} ${snapToGrid ? styles.ToolBtn_active : ''}`} onClick={() => setSnapToGrid((v) => !v)}>
                                 <GridOnOutlinedIcon fontSize="small" />
@@ -1070,6 +1149,8 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                         <button type="button" className={styles.PaletteItem} onClick={() => setLeftPanel('er')}>ER-диаграмма</button>
                         <button type="button" className={styles.PaletteItem} onClick={() => setLeftPanel('mockup')}>Mockup / UI</button>
                         <button type="button" className={styles.PaletteItem} onClick={() => setLeftPanel('flowchart')}>Пресеты</button>
+                        <div className={styles.ToolbarDivider} />
+                        <button type="button" className={styles.PaletteItem} onClick={() => drawioInputRef.current?.click()}>Импорт draw.io</button>
                     </div>
                 ) : leftPanel === 'uml' ? (
                     <div className={styles.LeftPanel}>
@@ -1213,6 +1294,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                             const isBpmn = isBpmnBlockType(block.type);
                             const isEr = isErBlockType(block.type);
                             const isMockup = isMockupBlockType(block.type);
+                            const isImage = block.type === 'image';
                             const isText = isTextBlock(block);
                             const isSelected = selectedIds.has(block.id);
                             const showAnchors = tool === 'line' && !isEditing;
@@ -1228,6 +1310,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                                         isBpmn ? styles.Block_bpmn : '',
                                         isEr ? styles.Block_er : '',
                                         isMockup ? styles.Block_mockup : '',
+                                        isImage ? styles.Block_image : '',
                                         isSelected && !isEditing ? styles.Block_selected : '',
                                     ].filter(Boolean).join(' ')}
                                     style={{
@@ -1268,6 +1351,9 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                                                 ) : null}
                                             </div>
                                         )
+                                    ) : isImage ? (
+                                        // eslint-disable-next-line @next/next/no-img-element
+                                        <img className={styles.ImageBlockContent} src={block.src} alt={block.title || ''} draggable={false} />
                                     ) : isText ? (
                                         block.type === 'comment' ? (
                                             <div className={styles.CommentBlockContent}>
