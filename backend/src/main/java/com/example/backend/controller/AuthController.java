@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.*;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -83,7 +84,8 @@ public class AuthController {
 
     @GetMapping("/me")
     public ResponseEntity<?> getCurrentUser(Authentication authentication) {
-        if (authentication == null || !authentication.isAuthenticated()) {
+        if (authentication == null || !authentication.isAuthenticated()
+                || authentication instanceof AnonymousAuthenticationToken) {
             return ResponseEntity.status(401).body(Map.of("error", "Not authenticated"));
         }
 
@@ -108,10 +110,11 @@ public class AuthController {
             User updatedUser = userService.updateProfile(currentUser.getId(), fullName, email);
 
             Map<String, Object> response = new HashMap<>();
-            response.put("message", "Profile updated successfully");
+            response.put("id", updatedUser.getId());
             response.put("username", updatedUser.getUsername());
             response.put("email", updatedUser.getEmail());
             response.put("fullName", updatedUser.getFullName());
+            response.put("role", updatedUser.getRole().name());
 
             return ResponseEntity.ok(response);
         } catch (RuntimeException e) {
@@ -135,11 +138,13 @@ public class AuthController {
     }
 
     @DeleteMapping("/me")
-    public ResponseEntity<?> deactivateAccount() {
+    public ResponseEntity<?> deactivateAccount(HttpServletRequest request) {
         try {
             User currentUser = userService.getCurrentUser();
             userService.deactivateAccount(currentUser.getId());
 
+            HttpSession session = request.getSession(false);
+            if (session != null) session.invalidate();
             SecurityContextHolder.clearContext();
 
             return ResponseEntity.ok(Map.of("message", "Account deactivated successfully"));

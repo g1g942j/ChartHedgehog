@@ -32,6 +32,15 @@ public class Diagram {
     @Column(name = "is_public")
     private Boolean isPublic = false;
 
+    @Column(columnDefinition = "TEXT")
+    private String content;
+
+    @Column(columnDefinition = "TEXT")
+    private String preview;
+
+    @Column(length = 100)
+    private String template;
+
 
     @OneToMany(mappedBy = "diagram", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<DiagramBlock> blocks = new ArrayList<>();
@@ -77,6 +86,12 @@ public class Diagram {
     public void setParticipants(List<User> participants) { this.participants = participants; }
     public List<DiagramParticipant> getParticipantRoles() { return participantRoles; }
     public void setParticipantRoles(List<DiagramParticipant> participantRoles) { this.participantRoles = participantRoles; }
+    public String getContent() { return content; }
+    public void setContent(String content) { this.content = content; }
+    public String getPreview() { return preview; }
+    public void setPreview(String preview) { this.preview = preview; }
+    public String getTemplate() { return template; }
+    public void setTemplate(String template) { this.template = template; }
 
 
     public void addParticipant(User user) {

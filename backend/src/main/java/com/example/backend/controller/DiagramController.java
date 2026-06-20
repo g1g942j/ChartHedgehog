@@ -1,15 +1,15 @@
 package com.example.backend.controller;
 
-import com.example.backend.entity.Diagram;
+import com.example.backend.dto.DiagramDetailDto;
+import com.example.backend.dto.DiagramParticipantDto;
+import com.example.backend.dto.DiagramSummaryDto;
 import com.example.backend.entity.ParticipantRole;
-import com.example.backend.entity.User;
 import com.example.backend.service.DiagramService;
 import com.example.backend.service.UserService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -26,88 +26,55 @@ public class DiagramController {
         this.userService = userService;
     }
 
-    @PostMapping
-    public ResponseEntity<?> createDiagram(@RequestParam String name) {
+    @GetMapping("/my")
+    public ResponseEntity<?> getMyDiagrams() {
         try {
-            Long currentUserId = userService.getCurrentUser().getId();
-            Diagram diagram = diagramService.createDiagram(name, currentUserId);
-            return ResponseEntity.ok(diagram);
+            Long uid = userService.getCurrentUser().getId();
+            List<DiagramSummaryDto> list = diagramService.getMyDiagramSummaries(uid);
+            return ResponseEntity.ok(list);
         } catch (Exception e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PostMapping
+    public ResponseEntity<?> createDiagram(@RequestBody Map<String, String> body) {
+        try {
+            String name = body.get("name");
+            if (name == null || name.isBlank()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Name is required"));
+            }
+            Long uid = userService.getCurrentUser().getId();
+            DiagramSummaryDto dto = diagramService.createDiagramSummary(name.trim(), uid);
+            return ResponseEntity.ok(dto);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
 
     @GetMapping("/{id}")
     public ResponseEntity<?> getDiagram(@PathVariable Long id) {
         try {
-            Diagram diagram = diagramService.findById(id);
-            return ResponseEntity.ok(diagram);
+            var user = userService.getCurrentUserOrNull();
+            Long uid = user != null ? user.getId() : null;
+            DiagramDetailDto dto = diagramService.getDiagramDetail(id, uid);
+            return ResponseEntity.ok(dto);
         } catch (Exception e) {
-            return ResponseEntity.notFound().build();
+            return ResponseEntity.status(404).body(Map.of("error", e.getMessage()));
         }
     }
 
-    @DeleteMapping("/{id}")
-    public ResponseEntity<?> deleteDiagram(@PathVariable Long id) {
+    @PutMapping("/{id}/public")
+    public ResponseEntity<?> setPublic(@PathVariable Long id,
+                                       @RequestBody Map<String, Object> body) {
         try {
-            diagramService.deleteDiagram(id);
-            return ResponseEntity.ok().build();
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
-        }
-    }
-
-    @GetMapping
-    public ResponseEntity<?> getAllDiagrams() {
-        try {
-            Long currentUserId = userService.getCurrentUser().getId();
-            List<Diagram> diagrams = diagramService.getMyDiagrams(currentUserId);
-            return ResponseEntity.ok(diagrams);
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
-    }
-    @PostMapping("/{diagramId}/participants/{userId}")
-    public ResponseEntity<?> addParticipant(@PathVariable Long diagramId,
-                                            @PathVariable Long userId,
-                                            @RequestParam ParticipantRole role) {
-        try {
-            Diagram diagram = diagramService.addParticipant(diagramId, userId, role);
-            return ResponseEntity.ok(diagram);
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
-        }
-    }
-
-
-    @DeleteMapping("/{diagramId}/participants/{userId}")
-    public ResponseEntity<?> removeParticipant(@PathVariable Long diagramId,
-                                               @PathVariable Long userId) {
-        try {
-            Diagram diagram = diagramService.removeParticipant(diagramId, userId);
-            return ResponseEntity.ok(diagram);
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
-        }
-    }
-
-
-    @GetMapping("/{diagramId}/participants")
-    public ResponseEntity<?> getParticipants(@PathVariable Long diagramId) {
-        try {
-            List<User> participants = diagramService.getParticipants(diagramId);
-            return ResponseEntity.ok(participants);
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
-        }
-    }
-
-    @GetMapping("/my")
-    public ResponseEntity<?> getMyDiagrams() {
-        try {
-            Long currentUserId = userService.getCurrentUser().getId();
-            List<Diagram> diagrams = diagramService.getMyDiagrams(currentUserId);
-            return ResponseEntity.ok(diagrams);
+            Long uid = userService.getCurrentUser().getId();
+            Object val = body.get("isPublic");
+            if (!(val instanceof Boolean)) {
+                return ResponseEntity.badRequest().body(Map.of("error", "isPublic (boolean) required"));
+            }
+            diagramService.setPublic(id, (Boolean) val, uid);
+            return ResponseEntity.noContent().build();
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
@@ -117,38 +84,118 @@ public class DiagramController {
     public ResponseEntity<?> updateDiagram(@PathVariable Long id,
                                            @RequestBody Map<String, String> updates) {
         try {
-            Long currentUserId = userService.getCurrentUser().getId();
-            String name = updates.get("name");
-            String description = updates.get("description");
-
-            Diagram diagram = diagramService.updateDiagram(id, name, description, currentUserId);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("message", "Diagram updated successfully");
-            response.put("id", diagram.getId());
-            response.put("name", diagram.getName());
-            response.put("description", diagram.getDescription());
-
-            return ResponseEntity.ok(response);
+            Long uid = userService.getCurrentUser().getId();
+            diagramService.updateDiagram(id, updates.get("name"), updates.get("description"), uid);
+            return ResponseEntity.ok(diagramService.getDiagramDetail(id, uid));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
 
-    @GetMapping("/{id}/access")
-    public ResponseEntity<?> getUserRoleInDiagram(@PathVariable Long id) {
+    @DeleteMapping("/{id}")
+    public ResponseEntity<?> deleteDiagram(@PathVariable Long id) {
         try {
-            Long currentUserId = userService.getCurrentUser().getId();
-            ParticipantRole role = diagramService.getUserRoleInDiagram(id, currentUserId);
+            diagramService.deleteDiagram(id);
+            return ResponseEntity.noContent().build();
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
 
-            if (role == null) {
-                return ResponseEntity.status(403).body(Map.of("error", "Access denied"));
-            }
+    @PostMapping("/{id}/clone")
+    public ResponseEntity<?> cloneDiagram(@PathVariable Long id) {
+        try {
+            Long uid = userService.getCurrentUser().getId();
+            DiagramSummaryDto dto = diagramService.cloneDiagram(id, uid);
+            return ResponseEntity.ok(dto);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
 
+    @GetMapping("/{id}/content")
+    public ResponseEntity<?> getContent(@PathVariable Long id) {
+        try {
+            var user = userService.getCurrentUserOrNull();
+            Long uid = user != null ? user.getId() : null;
+            String[] contentAndTemplate = diagramService.getContent(id, uid);
             return ResponseEntity.ok(Map.of(
-                    "role", role.name(),
-                    "canEdit", role == ParticipantRole.OWNER || role == ParticipantRole.EDITOR
+                    "content", contentAndTemplate[0],
+                    "template", contentAndTemplate[1]
             ));
+        } catch (Exception e) {
+            return ResponseEntity.status(403).body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PutMapping("/{id}/content")
+    public ResponseEntity<?> saveContent(@PathVariable Long id,
+                                         @RequestBody Map<String, String> body) {
+        try {
+            Long uid = userService.getCurrentUser().getId();
+            diagramService.updateContent(
+                    id,
+                    body.get("content"),
+                    body.get("template"),
+                    body.get("preview"),
+                    uid
+            );
+            return ResponseEntity.noContent().build();
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @GetMapping("/{id}/participants")
+    public ResponseEntity<?> getParticipants(@PathVariable Long id) {
+        try {
+            Long uid = userService.getCurrentUser().getId();
+            List<DiagramParticipantDto> list = diagramService.getParticipantDtos(id, uid);
+            return ResponseEntity.ok(list);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/{diagramId}/participants/{userId}")
+    public ResponseEntity<?> addParticipant(@PathVariable Long diagramId,
+                                            @PathVariable Long userId,
+                                            @RequestBody Map<String, String> body) {
+        try {
+            ParticipantRole role = ParticipantRole.valueOf(
+                    body.getOrDefault("role", "VIEWER").toUpperCase());
+            diagramService.addParticipant(diagramId, userId, role);
+            return ResponseEntity.noContent().build();
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Invalid role"));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @DeleteMapping("/{diagramId}/participants/{userId}")
+    public ResponseEntity<?> removeParticipant(@PathVariable Long diagramId,
+                                               @PathVariable Long userId) {
+        try {
+            diagramService.removeParticipant(diagramId, userId);
+            return ResponseEntity.noContent().build();
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PutMapping("/{diagramId}/participants/{userId}/role")
+    public ResponseEntity<?> updateParticipantRole(@PathVariable Long diagramId,
+                                                   @PathVariable Long userId,
+                                                   @RequestBody Map<String, String> body) {
+        try {
+            Long requesterId = userService.getCurrentUser().getId();
+            ParticipantRole newRole = ParticipantRole.valueOf(
+                    body.get("role").toUpperCase());
+            diagramService.updateParticipantRole(diagramId, userId, newRole, requesterId);
+            return ResponseEntity.noContent().build();
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Invalid role"));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
