@@ -48,11 +48,7 @@ export function useDiagramParticipants(
 
     const participantsQuery = useQuery({
         queryKey: ['diagramParticipants', diagramId, currentUserQuery.data?.username],
-        queryFn: () =>
-            fetchDiagramParticipants(
-                diagramId,
-                currentUserQuery.data?.username,
-            ),
+        queryFn: () => fetchDiagramParticipants(diagramId),
         enabled: currentUserQuery.isSuccess,
     });
 

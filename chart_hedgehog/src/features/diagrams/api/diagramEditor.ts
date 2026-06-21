@@ -1,6 +1,4 @@
-import { getSessionUser } from '@/shared/auth/session';
-
-import { getDiagramById, updateStoredDiagram } from './diagrams';
+import { apiFetch } from '@/shared/api/client';
 
 export type AnchorSide = 'top' | 'right' | 'bottom' | 'left';
 
@@ -87,6 +85,9 @@ export type DiagramCanvasBlock = {
     strokeColor?: string;
     strokeWidth?: number;
     fontSize?: number;
+    fontWeight?: 'normal' | 'bold';
+    fontStyle?: 'normal' | 'italic';
+    textColor?: string;
     /** data URL для блоков типа 'image' */
     src?: string;
 };
@@ -327,20 +328,11 @@ function parseElements(content?: string | null): DiagramElement[] {
     return [];
 }
 
-function getCallerRole(diagramId: number): { role: string; diagram: NonNullable<ReturnType<typeof getDiagramById>> } {
-    const user = getSessionUser();
-    if (!user) throw new Error('Не авторизован');
-    const diagram = getDiagramById(diagramId);
-    if (!diagram) throw new Error('Диаграмма не найдена');
-    if (diagram.ownerId === user.id) return { role: 'OWNER', diagram };
-    const p = diagram.participantRoles.find((r) => r.userId === user.id);
-    if (!p) throw new Error('Нет доступа к диаграмме');
-    return { role: p.role, diagram };
-}
-
 export async function fetchDiagramEditorState(diagramId: number): Promise<DiagramEditorState> {
-    const { diagram } = getCallerRole(diagramId);
-    return { template: diagram.template, blocks: parseElements(diagram.content) };
+    const data = await apiFetch<{ content: string; template: string | null }>(
+        `/api/diagrams/${diagramId}/content`,
+    );
+    return { template: data.template, blocks: parseElements(data.content) };
 }
 
 function buildPreviewSvg(elements: DiagramElement[]): string {
@@ -361,11 +353,12 @@ function buildPreviewSvg(elements: DiagramElement[]): string {
 }
 
 export async function saveDiagramEditorState(diagramId: number, state: DiagramEditorState): Promise<void> {
-    const { role, diagram } = getCallerRole(diagramId);
-    if (role !== 'OWNER' && role !== 'EDITOR') throw new Error('Недостаточно прав для редактирования диаграммы');
-    diagram.template = state.template;
-    diagram.content = JSON.stringify(state.blocks);
-    diagram.updatedAt = new Date().toISOString();
-    diagram.preview = buildPreviewSvg(state.blocks);
-    updateStoredDiagram(diagram);
+    await apiFetch(`/api/diagrams/${diagramId}/content`, {
+        method: 'PUT',
+        body: JSON.stringify({
+            content: JSON.stringify(state.blocks),
+            template: state.template ?? null,
+            preview: buildPreviewSvg(state.blocks),
+        }),
+    });
 }
