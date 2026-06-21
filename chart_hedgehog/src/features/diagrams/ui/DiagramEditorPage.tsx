@@ -267,6 +267,9 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
     // ── anchor hover ──────────────────────────────────────────────────────────
     const [anchorHover, setAnchorHover] = useState<{ blockId: string; side: AnchorSide } | null>(null);
 
+    // ── minimap canvas size ───────────────────────────────────────────────────
+    const [canvasSize, setCanvasSize] = useState({ w: 0, h: 0 });
+
     // ── UI panels ─────────────────────────────────────────────────────────────
     const [leftPanel, setLeftPanel] = useState<LeftPanel>('none');
     const [menuOpen, setMenuOpen] = useState(false);
@@ -1109,7 +1112,37 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
     };
 
     // ── minimap ───────────────────────────────────────────────────────────────
-    const minimapBounds = useMemo(() => getContentBounds(), [elements]); // eslint-disable-line react-hooks/exhaustive-deps
+    useEffect(() => {
+        const el = canvasRef.current;
+        if (!el) return;
+        const ro = new ResizeObserver((entries) => {
+            const { width, height } = entries[0].contentRect;
+            setCanvasSize({ w: width, h: height });
+        });
+        ro.observe(el);
+        const r = el.getBoundingClientRect();
+        setCanvasSize({ w: r.width, h: r.height });
+        return () => ro.disconnect();
+    }, []);
+
+    const minimapBounds = useMemo(() => {
+        const PAD = 32;
+        const content = getContentBounds(); // eslint-disable-line react-hooks/exhaustive-deps
+        let minX = content ? content.x - PAD : Infinity;
+        let minY = content ? content.y - PAD : Infinity;
+        let maxX = content ? content.x + content.width + PAD : -Infinity;
+        let maxY = content ? content.y + content.height + PAD : -Infinity;
+        if (canvasSize.w > 0) {
+            const vpX = -panX / zoom, vpY = -panY / zoom;
+            const vpW = canvasSize.w / zoom, vpH = canvasSize.h / zoom;
+            minX = Math.min(minX, vpX - PAD);
+            minY = Math.min(minY, vpY - PAD);
+            maxX = Math.max(maxX, vpX + vpW + PAD);
+            maxY = Math.max(maxY, vpY + vpH + PAD);
+        }
+        if (!isFinite(minX)) return null;
+        return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+    }, [elements, panX, panY, zoom, canvasSize]); // eslint-disable-line react-hooks/exhaustive-deps
     const MINI_W = 160, MINI_H = 90;
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -1597,25 +1630,46 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                     {/* ── MINIMAP ── */}
                     <RemoteCursors cursors={remoteCursors} zoom={zoom} panX={panX} panY={panY} />
 
-                    {minimapBounds && elements.length > 0 ? (
-                        <div className={styles.Minimap} title="Миникарта">
-                            <svg width={MINI_W} height={MINI_H}
-                                viewBox={`${minimapBounds.x} ${minimapBounds.y} ${minimapBounds.width} ${minimapBounds.height}`}
-                                style={{ width: MINI_W, height: MINI_H }}
-                            >
-                                {elements.filter(isLine).map((l) => {
-                                    const c = resolveLineCoords(l, blockMap);
-                                    return <line key={l.id} x1={c.x1} y1={c.y1} x2={c.x2} y2={c.y2} stroke="var(--text-color)" strokeWidth="3" opacity="0.5" />;
-                                })}
-                                {elements.filter(isBlock).map((b) => (
-                                    <rect key={b.id} x={b.x} y={b.y} width={b.width} height={b.height}
-                                        fill={b.fillColor ?? (isShapeBlockType(b.type) ? 'var(--primary)' : 'var(--surface)')}
-                                        stroke={b.strokeColor ?? 'var(--primary)'} strokeWidth="3" rx="4" opacity="0.8"
-                                    />
-                                ))}
-                            </svg>
-                        </div>
-                    ) : null}
+                    {minimapBounds && elements.length > 0 ? (() => {
+                        const sw = minimapBounds.width / MINI_W * 2;
+                        const vpX = canvasSize.w > 0 ? -panX / zoom : null;
+                        const vpY = canvasSize.h > 0 ? -panY / zoom : null;
+                        const vpW = canvasSize.w / zoom;
+                        const vpH = canvasSize.h / zoom;
+                        return (
+                            <div className={styles.Minimap} title="Миникарта">
+                                <svg width={MINI_W} height={MINI_H}
+                                    viewBox={`${minimapBounds.x} ${minimapBounds.y} ${minimapBounds.width} ${minimapBounds.height}`}
+                                    style={{ width: MINI_W, height: MINI_H }}
+                                >
+                                    {elements.filter(isBlock).map((b) => {
+                                        const { x, y, width: bw, height: bh } = b;
+                                        const fill = b.fillColor ?? '#eff6ff';
+                                        const stroke = b.strokeColor ?? '#3b82f6';
+                                        const cx = x + bw / 2, cy = y + bh / 2;
+                                        if (b.type === 'text') return <text key={b.id} x={cx} y={cy} textAnchor="middle" dominantBaseline="middle" fontSize={b.fontSize ?? 14} fill={stroke} opacity={0.8}>{b.title}</text>;
+                                        if (b.type === 'image') return b.src ? <image key={b.id} href={b.src} x={x} y={y} width={bw} height={bh} opacity={0.8} preserveAspectRatio="xMidYMid meet" /> : <rect key={b.id} x={x} y={y} width={bw} height={bh} fill="#f1f5f9" stroke="#94a3b8" strokeWidth={sw} rx={4} opacity={0.8} />;
+                                        if (b.type === 'circle' || b.type === 'er-attribute') return <ellipse key={b.id} cx={cx} cy={cy} rx={bw / 2} ry={bh / 2} fill={fill} stroke={stroke} strokeWidth={sw} opacity={0.8} />;
+                                        if (b.type === 'bpmn-event') return <circle key={b.id} cx={cx} cy={cy} r={Math.min(bw, bh) / 2 - 1} fill={fill} stroke="#22c55e" strokeWidth={sw} opacity={0.8} />;
+                                        if (b.type === 'bpmn-end') return <circle key={b.id} cx={cx} cy={cy} r={Math.min(bw, bh) / 2 - 1} fill={fill} stroke="#ef4444" strokeWidth={sw * 2} opacity={0.8} />;
+                                        if (b.type === 'diamond' || b.type === 'er-relation' || b.type === 'bpmn-gateway') return <polygon key={b.id} points={`${cx},${y} ${x + bw},${cy} ${cx},${y + bh} ${x},${cy}`} fill={fill} stroke={stroke} strokeWidth={sw} opacity={0.8} />;
+                                        if (b.type === 'triangle') return <polygon key={b.id} points={`${cx},${y} ${x + bw},${y + bh} ${x},${y + bh}`} fill={fill} stroke="#22c55e" strokeWidth={sw} opacity={0.8} />;
+                                        if (b.type === 'sticky' || b.type === 'comment') return <rect key={b.id} x={x} y={y} width={bw} height={bh} fill={b.fillColor ?? '#fef9c3'} stroke={b.strokeColor ?? '#eab308'} strokeWidth={sw} rx={4} opacity={0.8} />;
+                                        return <rect key={b.id} x={x} y={y} width={bw} height={bh} fill={fill} stroke={stroke} strokeWidth={sw} rx={4} opacity={0.8} />;
+                                    })}
+                                    {elements.filter(isLine).map((l) => {
+                                        const c = resolveLineCoords(l, blockMap);
+                                        return <line key={l.id} x1={c.x1} y1={c.y1} x2={c.x2} y2={c.y2} stroke="#64748b" strokeWidth={sw} opacity={0.7} />;
+                                    })}
+                                    {vpX !== null && vpY !== null ? (
+                                        <rect x={vpX} y={vpY} width={vpW} height={vpH}
+                                            fill="rgba(59,130,246,0.08)" stroke="#3b82f6" strokeWidth={sw * 1.5} rx={sw * 2}
+                                        />
+                                    ) : null}
+                                </svg>
+                            </div>
+                        );
+                    })() : null}
                 </div>
 
                 {/* ── PROPERTIES PANEL ── */}
