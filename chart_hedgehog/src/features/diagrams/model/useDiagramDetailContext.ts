@@ -15,23 +15,23 @@ export function useDiagramDetailContext(diagramId: number) {
     const currentUserQuery = useQuery({
         queryKey: ['currentUser'],
         queryFn: fetchCurrentUser,
+        retry: false,
     });
 
     const diagramQuery = useQuery({
-        queryKey: ['diagram', diagramId, currentUserQuery.data?.username],
-        queryFn: () =>
-            fetchDiagramDetail(
-                diagramId,
-                currentUserQuery.data?.username,
-            ),
-        enabled: currentUserQuery.isSuccess,
+        queryKey: ['diagram', diagramId],
+        queryFn: () => fetchDiagramDetail(diagramId),
     });
 
+    // Only propagate currentUser error if diagram also failed — public diagrams
+    // load without auth, so a 401 on /me should not block the editor.
+    // Propagate currentUser error only after diagramQuery has finished —
+    // otherwise a fast 401 on /me redirects before the public diagram loads.
     const loadError =
         diagramQuery.error instanceof Error
             ? diagramQuery.error.message
-            : diagramQuery.error
-              ? 'Ошибка загрузки'
+            : !diagramQuery.isPending && !diagramQuery.data && currentUserQuery.error instanceof Error
+              ? currentUserQuery.error.message
               : null;
 
     useEffect(() => {
@@ -43,7 +43,7 @@ export function useDiagramDetailContext(diagramId: number) {
     return {
         diagram: diagramQuery.data ?? null,
         currentUser: currentUserQuery.data ?? null,
-        isLoading: diagramQuery.isPending || currentUserQuery.isPending,
+        isLoading: diagramQuery.isPending,
         loadError,
         refetchDiagram: diagramQuery.refetch,
     };

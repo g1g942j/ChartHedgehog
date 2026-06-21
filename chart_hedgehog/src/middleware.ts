@@ -11,5 +11,9 @@ export function middleware(request: NextRequest): NextResponse {
 }
 
 export const config = {
-    matcher: ['/diagrams/:path*', '/profile'],
+    // /diagrams (list) and /profile require auth cookie.
+    // /diagrams/[id] and sub-routes are intentionally excluded —
+    // public diagrams are accessible without auth; React components
+    // handle their own redirect when access is denied.
+    matcher: ['/diagrams', '/profile'],
 };

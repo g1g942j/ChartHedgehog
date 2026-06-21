@@ -592,18 +592,18 @@
 
 .Block_rectangle {
     &.Block_shape .BlockShapeContent {
-        color: #3b82f6;
-        background: rgb(59 130 246 / 0.07);
-        border: 2.5px solid #3b82f6;
+        color: var(--block-stroke, #3b82f6);
+        background: var(--block-fill, rgb(59 130 246 / 0.07));
+        border: var(--block-stroke-width, 2.5px) solid var(--block-stroke, #3b82f6);
         border-radius: 6px;
     }
 }
 
 .Block_circle {
     &.Block_shape .BlockShapeContent {
-        color: #ec4899;
-        background: rgb(236 72 153 / 0.07);
-        border: 2.5px solid #ec4899;
+        color: var(--block-stroke, #ec4899);
+        background: var(--block-fill, rgb(236 72 153 / 0.07));
+        border: var(--block-stroke-width, 2.5px) solid var(--block-stroke, #ec4899);
         border-radius: 50%;
     }
 }
@@ -611,7 +611,7 @@
 .Block_diamond {
     &.Block_shape {
         overflow: visible;
-        color: #f59e0b;
+        color: var(--block-stroke, #f59e0b);
         .BlockShapeContent { background: transparent; }
     }
 }
@@ -619,7 +619,7 @@
 .Block_triangle {
     &.Block_shape {
         overflow: visible;
-        color: #22c55e;
+        color: var(--block-stroke, #22c55e);
         .BlockShapeContent { background: transparent; }
     }
 }
@@ -627,9 +627,9 @@
 .Block_sticky {
     &.Block_shape .BlockShapeContent {
         position: relative;
-        color: #854d0e;
-        background: #fef9c3;
-        border: 2px solid #eab308;
+        color: var(--block-stroke, #854d0e);
+        background: var(--block-fill, #fef9c3);
+        border: var(--block-stroke-width, 2px) solid var(--block-stroke, #eab308);
         border-radius: 4px 4px 4px 0;
         box-shadow: 3px 3px 8px rgb(0 0 0 / 0.15);
 
@@ -670,8 +670,10 @@
     position: relative;
     z-index: 1;
     padding: 4px 8px;
-    font-size: 13px;
-    font-weight: 600;
+    font-size: var(--block-font-size, 13px);
+    font-weight: var(--block-font-weight, 600);
+    font-style: var(--block-font-style, normal);
+    color: var(--block-text-color, currentColor);
     text-align: center;
     overflow-wrap: break-word;
 }
@@ -755,8 +757,12 @@
 .TextBlockPre {
     flex: 1;
     margin: 0;
-    font: 14px/1.4 inherit;
-    color: var(--text-color);
+    font-size: var(--block-font-size, 14px);
+    line-height: 1.4;
+    font-family: inherit;
+    font-weight: var(--block-font-weight, 400);
+    font-style: var(--block-font-style, normal);
+    color: var(--block-text-color, var(--text-color));
     overflow-wrap: break-word;
     white-space: pre-wrap;
 }
@@ -1313,4 +1319,75 @@
 .PresetDesc {
     font-size: 11px;
     color: var(--text-secondary, #888);
+}
+
+// ── Align bar ─────────────────────────────────────────────────────────────────
+
+.AlignBar {
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    z-index: 15;
+    display: flex;
+    gap: 2px;
+    align-items: center;
+    padding: 4px 6px;
+    pointer-events: all;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: 0 2px 8px rgb(0 0 0 / 0.12);
+    transform: translateX(-50%);
+}
+
+.AlignBtn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 26px;
+    font-size: 14px;
+    color: var(--text-color);
+    cursor: pointer;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    transition: background 0.12s, border-color 0.12s;
+
+    &:hover {
+        background: var(--bg-soft);
+        border-color: var(--border);
+    }
+}
+
+.AlignBarDivider {
+    width: 1px;
+    height: 16px;
+    margin: 0 2px;
+    background: var(--border);
+}
+
+// ── Format buttons (Bold / Italic) in properties panel ─────────────────────────
+
+.FmtBtn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 26px;
+    font-size: 13px;
+    color: var(--text-color);
+    cursor: pointer;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    transition: background 0.12s;
+
+    &:hover { background: var(--bg-soft); }
+}
+
+.FmtBtn_on {
+    color: var(--primary);
+    background: color-mix(in srgb, var(--primary) 12%, var(--surface));
+    border-color: var(--primary);
 }
