@@ -58,7 +58,7 @@ export function AppNavbar() {
             <Link href="/diagrams" className={styles.Brand}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src="/favicon.ico" width={34} height={34} alt="" className={styles.BrandMark} />
-                <Typography component="span" variant="subtitle1">
+                <Typography component="span" variant="subtitle1" sx={{ lineHeight: 1 }}>
                     ChartHedgehog
                 </Typography>
             </Link>

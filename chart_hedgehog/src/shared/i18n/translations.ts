@@ -40,6 +40,7 @@ const ru: AppTranslations = {
         loginFallbackError: 'Не удалось войти',
         registerFallbackError: 'Не удалось зарегистрироваться',
         redirectToLogin: 'Перенаправление на вход...',
+        forgotPassword: 'Забыли пароль? Свяжитесь с администратором.',
         validation: {
             usernameMin: 'Имя пользователя: минимум 3 символа',
             usernameMax: 'Имя пользователя: максимум 50 символов',
@@ -175,6 +176,7 @@ const en: AppTranslations = {
         loginFallbackError: 'Could not log in',
         registerFallbackError: 'Could not register',
         redirectToLogin: 'Redirecting to login...',
+        forgotPassword: 'Forgot your password? Contact the administrator.',
         validation: {
             usernameMin: 'Username: at least 3 characters',
             usernameMax: 'Username: no more than 50 characters',

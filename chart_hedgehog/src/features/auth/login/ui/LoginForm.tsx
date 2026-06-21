@@ -57,7 +57,7 @@ export function LoginForm() {
                     {t.auth.loginButton}
                 </Button>
                 <p style={{ margin: '4px 0 0', fontSize: 13, textAlign: 'center', color: 'var(--text-secondary, #888)' }}>
-                    Забыли пароль? Свяжитесь с администратором.
+                    {t.auth.forgotPassword}
                 </p>
             </Form>
         </AuthPageLayout>

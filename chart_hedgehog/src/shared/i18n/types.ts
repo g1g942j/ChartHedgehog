@@ -40,6 +40,7 @@ export type AppTranslations = {
         loginFallbackError: string;
         registerFallbackError: string;
         redirectToLogin: string;
+        forgotPassword: string;
         validation: {
             usernameMin: string;
             usernameMax: string;
