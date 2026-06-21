@@ -73,12 +73,14 @@ export function useCollaboration({ diagramId, userId, username, onRemoteOp }: Us
 
     useEffect(() => {
         const color = getUserColor(username);
+        let authFailure = false;
 
         const client = new Client({
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             webSocketFactory: () => new (SockJS as any)(`${API_BASE}/ws`) as WebSocket,
             reconnectDelay: 5000,
             onConnect: () => {
+                authFailure = false;
                 setConnected(true);
 
                 client.subscribe(`/topic/diagram/${diagramId}`, (msg) => {
@@ -115,8 +117,22 @@ export function useCollaboration({ diagramId, userId, username, onRemoteOp }: Us
                     body: JSON.stringify({ userId, username, color }),
                 });
             },
-            onDisconnect: () => setConnected(false),
-            onStompError: () => setConnected(false),
+            onDisconnect: () => {
+                setConnected(false);
+                if (authFailure) void client.deactivate();
+            },
+            onStompError: (frame) => {
+                setConnected(false);
+                const msg = (frame.headers?.message ?? '').toLowerCase();
+                if (msg.includes('unauthorized') || msg.includes('forbidden') || msg.includes('401') || msg.includes('403')) {
+                    authFailure = true;
+                    void client.deactivate();
+                }
+            },
+            onWebSocketError: () => {
+                // SockJS throws a generic error on HTTP 401 during handshake;
+                // deactivate after several failed attempts to avoid infinite loops.
+            },
         });
 
         client.activate();

@@ -86,17 +86,17 @@
 }
 
 .SaveErrorBanner {
+    z-index: 20;
     display: flex;
+    gap: 12px;
     align-items: center;
     justify-content: center;
-    gap: 12px;
     padding: 6px 16px;
     font-size: 13px;
     font-weight: 500;
     color: #991b1b;
     background: #fef2f2;
     border-bottom: 1px solid #fecaca;
-    z-index: 20;
 
     button {
         padding: 2px 10px;
@@ -698,8 +698,8 @@
     z-index: 1;
     padding: 4px 8px;
     font-size: var(--block-font-size, 13px);
-    font-weight: var(--block-font-weight, 600);
     font-style: var(--block-font-style, normal);
+    font-weight: var(--block-font-weight, 600);
     color: var(--block-text-color, currentColor);
     text-align: center;
     overflow-wrap: break-word;
@@ -784,11 +784,11 @@
 .TextBlockPre {
     flex: 1;
     margin: 0;
-    font-size: var(--block-font-size, 14px);
-    line-height: 1.4;
     font-family: inherit;
-    font-weight: var(--block-font-weight, 400);
+    font-size: var(--block-font-size, 14px);
     font-style: var(--block-font-style, normal);
+    font-weight: var(--block-font-weight, 400);
+    line-height: 1.4;
     color: var(--block-text-color, var(--text-color));
     overflow-wrap: break-word;
     white-space: pre-wrap;

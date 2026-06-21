@@ -1,6 +1,9 @@
 import { type NextRequest, NextResponse } from 'next/server';
 
-const AUTH_COOKIE = 'ch_auth';
+// JSESSIONID is set by Spring Security (httpOnly — unreadable by XSS).
+// Since both the frontend (port 3000) and backend (port 8080) share the
+// same host, cookies are domain-scoped and JSESSIONID is visible here.
+const AUTH_COOKIE = 'JSESSIONID';
 
 export function middleware(request: NextRequest): NextResponse {
     if (!request.cookies.has(AUTH_COOKIE)) {

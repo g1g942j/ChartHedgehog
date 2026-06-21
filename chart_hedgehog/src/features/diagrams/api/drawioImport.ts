@@ -60,9 +60,15 @@ function anchorsFor(
     return dy >= 0 ? ['bottom', 'top'] : ['top', 'bottom'];
 }
 
+/** Удаляет DOCTYPE и ENTITY-декларации из XML-строки перед парсингом. */
+function sanitizeXml(text: string): string {
+    return text.replace(/<!DOCTYPE[\s\S]*?>/gi, '').replace(/<!ENTITY\s[^>]*>/gi, '');
+}
+
 /** Достаёт один или несколько mxGraphModel-XML из текста файла draw.io. */
 async function extractMxGraphXml(text: string): Promise<string[]> {
-    const doc = new DOMParser().parseFromString(text, 'text/xml');
+    const safe = sanitizeXml(text);
+    const doc = new DOMParser().parseFromString(safe, 'text/xml');
     if (doc.querySelector('parsererror')) {
         throw new Error('Не удалось разобрать файл draw.io');
     }
@@ -101,7 +107,7 @@ export async function parseDrawioToElements(text: string): Promise<DiagramElemen
     const elements: DiagramElement[] = [];
 
     for (const xml of xmls) {
-        const doc = new DOMParser().parseFromString(xml, 'text/xml');
+        const doc = new DOMParser().parseFromString(sanitizeXml(xml), 'text/xml');
         const cells = Array.from(doc.querySelectorAll('mxCell'));
         const blockByMxId = new Map<string, DiagramCanvasBlock>();
 

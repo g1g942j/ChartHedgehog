@@ -91,7 +91,7 @@ type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 type SelBox = { x1: number; y1: number; x2: number; y2: number };
 
 function generateId(prefix: string): string {
-    return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    return `${prefix}-${crypto.randomUUID()}`;
 }
 
 const ZOOM_STEP = 0.1;
@@ -240,6 +240,8 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
 
     // ── selection ─────────────────────────────────────────────────────────────
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    const selectedIdsRef = useRef<Set<string>>(new Set());
+    useEffect(() => { selectedIdsRef.current = selectedIds; }, [selectedIds]);
     const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
     const [selBox, setSelBox] = useState<SelBox | null>(null);
     const selBoxStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -356,14 +358,17 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
 
     const onRemoteOp = useCallback((op: CollabBatchOp) => {
         setElements(prev => {
+            const locked = selectedIdsRef.current;
             let next = [...prev];
             if (op.deletedIds?.length) {
                 const delSet = new Set(op.deletedIds);
-                next = next.filter(e => !delSet.has((e as { id: string }).id));
+                // Don't delete elements the local user is currently selecting
+                next = next.filter(e => !delSet.has((e as { id: string }).id) || locked.has((e as { id: string }).id));
             }
             if (op.updated?.length) {
                 for (const upd of op.updated) {
                     const upId = (upd as { id: string }).id;
+                    if (locked.has(upId)) continue; // Skip remote updates to locally-selected elements
                     const idx = next.findIndex(e => (e as { id: string }).id === upId);
                     if (idx >= 0) next[idx] = upd;
                 }
@@ -475,7 +480,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
             setSaveStatus('error');
             toast.error('Не удалось сохранить диаграмму');
         }
-    }, [diagramId, template]);
+    }, [diagramId, template, toast]);
 
     useEffect(() => {
         if (saveStatus !== 'error') return;
@@ -830,6 +835,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
         let moved = false;
         const currentZoom = zoom;
 
+        const COORD_LIMIT = 50000;
         const move = (me: PointerEvent) => {
             moved = true;
             const dx = snapV((me.clientX - sx) / currentZoom, snapToGrid);
@@ -838,7 +844,10 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                 if (!isBlock(el) || !moveIds.has(el.id)) return el;
                 const start = startPositions.get(el.id);
                 if (!start) return el;
-                return { ...el, x: snapV(start.x + dx, snapToGrid), y: snapV(start.y + dy, snapToGrid) };
+                const nx = snapV(start.x + dx, snapToGrid);
+                const ny = snapV(start.y + dy, snapToGrid);
+                if (!isFinite(nx) || !isFinite(ny)) return el;
+                return { ...el, x: Math.max(-COORD_LIMIT, Math.min(COORD_LIMIT, nx)), y: Math.max(-COORD_LIMIT, Math.min(COORD_LIMIT, ny)) };
             }));
         };
         const up = () => {
@@ -979,6 +988,9 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
 
     const handleExport = async (format: ExportFormat) => {
         setIsExporting(true);
+        // Yield two frames so React can paint the loading indicator before the
+        // main thread is blocked by html2canvas or PDF generation.
+        await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
         try {
             const fname = renaming || diagramName || 'diagram';
             if (format === 'json') { downloadBlob(new Blob([JSON.stringify(elements, null, 2)], { type: 'application/json' }), `${fname}.json`); setExportOpen(false); return; }

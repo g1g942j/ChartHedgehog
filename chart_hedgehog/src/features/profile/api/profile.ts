@@ -65,7 +65,6 @@ export async function deactivateCurrentUser(): Promise<string> {
         method: 'DELETE',
     });
     clearSession();
-    document.cookie = 'ch_auth=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
     return result.message;
 }
 
@@ -79,5 +78,4 @@ export async function logoutUser(): Promise<void> {
         // ignore network errors — clear client state regardless
     }
     clearSession();
-    document.cookie = 'ch_auth=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
 }
