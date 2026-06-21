@@ -1,6 +1,7 @@
 import { AppRouterCacheProvider } from '@mui/material-nextjs/v15-appRouter';
 
 import type { Metadata } from 'next';
+import Script from 'next/script';
 
 import './globals.css';
 
@@ -17,15 +18,15 @@ export default function RootLayout({
 }>) {
     return (
         <html lang="ru" suppressHydrationWarning>
-            {/* Blocking script: applies saved theme class before first paint to prevent FOUC */}
-            <head>
-                <script
+            <body>
+                {/* Blocking script: applies saved theme class before first paint to prevent FOUC */}
+                <Script
+                    id="theme-init"
+                    strategy="beforeInteractive"
                     dangerouslySetInnerHTML={{
                         __html: `(function(){var t=localStorage.getItem('ChartHedgehog_theme');if(t==='light'||t==='dark')document.documentElement.classList.add('theme-'+t);})();`,
                     }}
                 />
-            </head>
-            <body>
                 <AppRouterCacheProvider>
                     <AppProviders>{children}</AppProviders>
                 </AppRouterCacheProvider>

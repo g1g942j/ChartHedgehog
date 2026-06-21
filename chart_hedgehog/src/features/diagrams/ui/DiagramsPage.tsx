@@ -69,6 +69,7 @@ export function DiagramsPage() {
         handleCreate,
         cloningId,
         handleClone,
+        generatedPreviews,
     } = useDiagramsList();
 
     const [search, setSearch] = useState('');
@@ -224,10 +225,10 @@ export function DiagramsPage() {
                                 {filtered.map((diagram) => (
                                     <li key={diagram.id} className={styles.GridItem}>
                                         <Link href={`/diagrams/${diagram.id}`} className={styles.GridItemPreview} aria-label={diagram.name}>
-                                            {diagram.preview ? (
+                                            {(diagram.preview ?? generatedPreviews[diagram.id]) ? (
                                                 // eslint-disable-next-line @next/next/no-img-element
                                                 <img
-                                                    src={`data:image/svg+xml,${encodeURIComponent(diagram.preview)}`}
+                                                    src={`data:image/svg+xml,${encodeURIComponent((diagram.preview ?? generatedPreviews[diagram.id])!)}`}
                                                     alt=""
                                                     className={styles.GridItemPreviewImg}
                                                 />

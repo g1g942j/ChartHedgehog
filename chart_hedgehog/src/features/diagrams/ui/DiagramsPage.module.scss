@@ -237,12 +237,16 @@
 
 .GridItemInfo {
     display: flex;
-    flex-direction: column;
-    gap: 6px;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
     padding: 10px 10px 8px;
 }
 
 .GridItemName {
+    flex: 1;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     font-size: 13px;

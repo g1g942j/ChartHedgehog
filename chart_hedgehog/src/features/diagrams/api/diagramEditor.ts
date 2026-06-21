@@ -335,7 +335,7 @@ export async function fetchDiagramEditorState(diagramId: number): Promise<Diagra
     return { template: data.template, blocks: parseElements(data.content) };
 }
 
-function buildPreviewSvg(elements: DiagramElement[]): string {
+export function buildPreviewSvg(elements: DiagramElement[]): string {
     const blocks = elements.filter(isCanvasBlock);
     const lines = elements.filter(isLineElement);
     if (blocks.length === 0 && lines.length === 0) return '';
