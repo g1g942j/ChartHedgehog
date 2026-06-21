@@ -471,8 +471,18 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
             await saveDiagramEditorState(diagramId, { template, blocks: els });
             setSaveStatus('saved');
             setTimeout(() => setSaveStatus('idle'), 2000);
-        } catch { setSaveStatus('error'); }
+        } catch {
+            setSaveStatus('error');
+            toast.error('Не удалось сохранить диаграмму');
+        }
     }, [diagramId, template]);
+
+    useEffect(() => {
+        if (saveStatus !== 'error') return;
+        const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); };
+        window.addEventListener('beforeunload', handler);
+        return () => window.removeEventListener('beforeunload', handler);
+    }, [saveStatus]);
 
     useEffect(() => {
         if (!canEdit) return;
@@ -1142,6 +1152,16 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                     </button>
                 </div>
             </header>
+
+            {/* ── SAVE ERROR BANNER ── */}
+            {saveStatus === 'error' ? (
+                <div className={styles.SaveErrorBanner}>
+                    <span>⚠ Изменения не сохранены</span>
+                    <button type="button" onClick={() => void saveNow(elementsRef.current)}>
+                        Повторить
+                    </button>
+                </div>
+            ) : null}
 
             {/* ── SETTINGS PANEL ── */}
             {menuOpen ? (

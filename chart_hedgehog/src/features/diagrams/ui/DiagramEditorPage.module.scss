@@ -85,6 +85,33 @@
     background: #fef2f2;
 }
 
+.SaveErrorBanner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 6px 16px;
+    font-size: 13px;
+    font-weight: 500;
+    color: #991b1b;
+    background: #fef2f2;
+    border-bottom: 1px solid #fecaca;
+    z-index: 20;
+
+    button {
+        padding: 2px 10px;
+        font-size: 12px;
+        font-weight: 600;
+        color: #991b1b;
+        cursor: pointer;
+        background: transparent;
+        border: 1px solid #fca5a5;
+        border-radius: 4px;
+
+        &:hover { background: #fee2e2; }
+    }
+}
+
 .TopBarRight {
     display: flex;
     gap: 6px;
