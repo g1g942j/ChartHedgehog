@@ -22,12 +22,11 @@ public class UserController {
     }
 
     @GetMapping("/search")
-    public ResponseEntity<?> searchUsers(@RequestParam String q) {
+    public ResponseEntity<?> searchUsers(@RequestParam String q,
+                                         @RequestParam(required = false) Long diagramId) {
         try {
             User currentUser = userService.getCurrentUser();
-
-            List<UserSearchResponse> users = userService.searchUsers(q, currentUser.getId());
-
+            List<UserSearchResponse> users = userService.searchUsers(q, currentUser.getId(), diagramId);
             return ResponseEntity.ok(users);
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));

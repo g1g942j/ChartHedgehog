@@ -1,5 +1,4 @@
-import { getDiagramById } from './diagrams';
-import { mapDiagramToDetail, toApiDiagram, userHasAccess } from './mappers';
+import { apiFetch } from '@/shared/api/client';
 
 export type DiagramDetail = {
     id: number;
@@ -10,31 +9,9 @@ export type DiagramDetail = {
     ownerId: number;
     ownerUsername: string;
     currentUserRole: string;
+    isPublic?: boolean;
 };
 
-export async function fetchDiagramDetail(
-    id: number,
-    currentUsername?: string,
-): Promise<DiagramDetail> {
-    const stored = getDiagramById(id);
-    if (!stored) {
-        throw new Error('Диаграмма не найдена');
-    }
-
-    const diagram = toApiDiagram(stored);
-
-    if (currentUsername && !userHasAccess(diagram, currentUsername)) {
-        throw new Error('Нет доступа к диаграмме');
-    }
-
-    return mapDiagramToDetail(diagram, currentUsername);
-}
-
-export async function fetchDiagramEntity(id: number) {
-    const stored = getDiagramById(id);
-    if (!stored) {
-        throw new Error('Диаграмма не найдена');
-    }
-
-    return toApiDiagram(stored);
+export async function fetchDiagramDetail(id: number): Promise<DiagramDetail> {
+    return apiFetch<DiagramDetail>(`/api/diagrams/${id}`);
 }

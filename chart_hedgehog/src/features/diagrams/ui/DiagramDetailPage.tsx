@@ -45,6 +45,7 @@ export function DiagramDetailPage() {
             diagramId={diagramId}
             diagramName={diagram.name}
             currentUserRole={diagram.currentUserRole}
+            isPublic={diagram.isPublic ?? false}
         />
     );
 }

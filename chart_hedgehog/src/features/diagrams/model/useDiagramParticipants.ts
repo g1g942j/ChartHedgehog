@@ -38,6 +38,7 @@ export function useDiagramParticipants(
     const [isAdding, setIsAdding] = useState(false);
     const [addError, setAddError] = useState<string | null>(null);
     const [actionError, setActionError] = useState<string | null>(null);
+    const [pendingRoleUserIds, setPendingRoleUserIds] = useState<Set<number>>(new Set());
     const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null);
     const resolveRef = useRef<((ok: boolean) => void) | null>(null);
 
@@ -48,11 +49,7 @@ export function useDiagramParticipants(
 
     const participantsQuery = useQuery({
         queryKey: ['diagramParticipants', diagramId, currentUserQuery.data?.username],
-        queryFn: () =>
-            fetchDiagramParticipants(
-                diagramId,
-                currentUserQuery.data?.username,
-            ),
+        queryFn: () => fetchDiagramParticipants(diagramId),
         enabled: currentUserQuery.isSuccess,
     });
 
@@ -140,7 +137,7 @@ export function useDiagramParticipants(
     };
 
     const handleRoleChange = async (userId: number, role: string, fromRole: string, displayName: string) => {
-        if (!canManage) {
+        if (!canManage || pendingRoleUserIds.has(userId)) {
             return;
         }
 
@@ -157,6 +154,7 @@ export function useDiagramParticipants(
         }
 
         setActionError(null);
+        setPendingRoleUserIds((prev) => new Set([...prev, userId]));
         try {
             await updateDiagramParticipantRole(diagramId, userId, role);
             await invalidate();
@@ -166,6 +164,8 @@ export function useDiagramParticipants(
                     ? error.message
                     : t.participants.addError,
             );
+        } finally {
+            setPendingRoleUserIds((prev) => { const n = new Set(prev); n.delete(userId); return n; });
         }
     };
 
@@ -203,6 +203,7 @@ export function useDiagramParticipants(
         isAdding,
         addError,
         actionError,
+        pendingRoleUserIds,
         handleAdd,
         handleRoleChange,
         handleRemove,

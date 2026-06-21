@@ -1,5 +1,5 @@
 export type { DiagramDetail } from './api/diagramDetail';
-export { fetchDiagramDetail, fetchDiagramEntity } from './api/diagramDetail';
+export { fetchDiagramDetail } from './api/diagramDetail';
 export type { DiagramSummary } from './api/diagrams';
 export { createDiagram, fetchMyDiagrams } from './api/diagrams';
 export type { DiagramParticipant } from './api/participants';

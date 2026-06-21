@@ -5,6 +5,12 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
 import { useQueryClient } from '@tanstack/react-query';
+import AlignHorizontalCenterOutlinedIcon from '@mui/icons-material/AlignHorizontalCenterOutlined';
+import AlignHorizontalLeftOutlinedIcon from '@mui/icons-material/AlignHorizontalLeftOutlined';
+import AlignHorizontalRightOutlinedIcon from '@mui/icons-material/AlignHorizontalRightOutlined';
+import AlignVerticalBottomOutlinedIcon from '@mui/icons-material/AlignVerticalBottomOutlined';
+import AlignVerticalCenterOutlinedIcon from '@mui/icons-material/AlignVerticalCenterOutlined';
+import AlignVerticalTopOutlinedIcon from '@mui/icons-material/AlignVerticalTopOutlined';
 import ArrowBackOutlinedIcon from '@mui/icons-material/ArrowBackOutlined';
 import BackspaceOutlinedIcon from '@mui/icons-material/BackspaceOutlined';
 import CategoryOutlinedIcon from '@mui/icons-material/CategoryOutlined';
@@ -28,6 +34,8 @@ import UndoOutlinedIcon from '@mui/icons-material/UndoOutlined';
 
 import type { DragEvent, PointerEvent as ReactPointerEvent } from 'react';
 
+import { apiFetch } from '@/shared/api/client';
+import { getSessionUser } from '@/shared/auth/session';
 import { useLocale } from '@/shared/i18n';
 import { useThemeMode } from '@/shared/theme';
 import { useToast } from '@/shared/toast';
@@ -69,6 +77,9 @@ import {
     UML_BLOCK_TEMPLATES,
 } from '../api/diagramEditor';
 import { deleteDiagram, updateDiagramName } from '../api/diagrams';
+import { type CollabBatchOp, useCollaboration } from '../model/useCollaboration';
+import { CollaborationAvatars } from './CollaborationAvatars';
+import { RemoteCursors } from './RemoteCursors';
 
 // ─── types ────────────────────────────────────────────────────────────────────
 
@@ -80,7 +91,7 @@ type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 type SelBox = { x1: number; y1: number; x2: number; y2: number };
 
 function generateId(prefix: string): string {
-    return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    return `${prefix}-${crypto.randomUUID()}`;
 }
 
 const ZOOM_STEP = 0.1;
@@ -181,12 +192,13 @@ export type DiagramEditorPageProps = {
     diagramName: string;
     currentUserRole: string;
     initialEditorState: DiagramEditorState;
+    isPublic?: boolean;
 };
 
 // ─── main component ───────────────────────────────────────────────────────────
 
 export function DiagramEditorPage(props: DiagramEditorPageProps) {
-    const { diagramId, diagramName, currentUserRole, initialEditorState } = props;
+    const { diagramId, diagramName, currentUserRole, initialEditorState, isPublic: initialIsPublic } = props;
     const { t } = useLocale();
     const { mode, toggleMode } = useThemeMode();
     const toast = useToast();
@@ -199,6 +211,10 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
 
     const canEdit = currentUserRole === 'OWNER' || currentUserRole === 'EDITOR';
     const canDelete = currentUserRole === 'OWNER';
+
+    const sessionUser = getSessionUser();
+    const userId = String(sessionUser?.id ?? 0);
+    const username = sessionUser?.username ?? 'Аноним';
 
     // ── canvas state ──────────────────────────────────────────────────────────
     const [elements, setElements] = useState<DiagramElement[]>(initialEditorState.blocks);
@@ -216,11 +232,16 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
     const futureRef = useRef<DiagramElement[][]>([]);
     const elementsRef = useRef<DiagramElement[]>(initialEditorState.blocks);
     const dragSnapshotRef = useRef<DiagramElement[] | null>(null);
+    const lastBroadcastedRef = useRef<Map<string, DiagramElement>>(
+        new Map(initialEditorState.blocks.map(e => [(e as { id: string }).id, e])),
+    );
 
     useEffect(() => { elementsRef.current = elements; }, [elements]);
 
     // ── selection ─────────────────────────────────────────────────────────────
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    const selectedIdsRef = useRef<Set<string>>(new Set());
+    useEffect(() => { selectedIdsRef.current = selectedIds; }, [selectedIds]);
     const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
     const [selBox, setSelBox] = useState<SelBox | null>(null);
     const selBoxStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -260,7 +281,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
     const [isRenaming, setIsRenaming] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-    const [isPublic, setIsPublic] = useState(false);
+    const [isPublic, setIsPublic] = useState(initialIsPublic ?? false);
     const [linkCopied, setLinkCopied] = useState(false);
 
     const shareUrl = typeof window !== 'undefined' ? window.location.href : '';
@@ -269,6 +290,20 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
             setLinkCopied(true);
             setTimeout(() => setLinkCopied(false), 2000);
         });
+    };
+
+    const handleTogglePublic = async () => {
+        if (currentUserRole !== 'OWNER') return;
+        const next = !isPublic;
+        setIsPublic(next);
+        try {
+            await apiFetch(`/api/diagrams/${diagramId}/public`, {
+                method: 'PUT',
+                body: JSON.stringify({ isPublic: next }),
+            });
+        } catch {
+            setIsPublic(!next);
+        }
     };
 
     // ── block map (for connector resolution) ─────────────────────────────────
@@ -321,6 +356,42 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
         setSelectedIds(new Set(newBlocks.map((b) => b.id)));
     }, [canEdit, pushHistory]);
 
+    const onRemoteOp = useCallback((op: CollabBatchOp) => {
+        setElements(prev => {
+            const locked = selectedIdsRef.current;
+            let next = [...prev];
+            if (op.deletedIds?.length) {
+                const delSet = new Set(op.deletedIds);
+                // Don't delete elements the local user is currently selecting
+                next = next.filter(e => !delSet.has((e as { id: string }).id) || locked.has((e as { id: string }).id));
+            }
+            if (op.updated?.length) {
+                for (const upd of op.updated) {
+                    const upId = (upd as { id: string }).id;
+                    if (locked.has(upId)) continue; // Skip remote updates to locally-selected elements
+                    const idx = next.findIndex(e => (e as { id: string }).id === upId);
+                    if (idx >= 0) next[idx] = upd;
+                }
+            }
+            if (op.added?.length) {
+                const existIds = new Set(next.map(e => (e as { id: string }).id));
+                for (const add of op.added) {
+                    if (!existIds.has((add as { id: string }).id)) next.push(add);
+                }
+            }
+            lastBroadcastedRef.current = new Map(next.map(e => [(e as { id: string }).id, e]));
+            return next;
+        });
+    }, []);
+
+    const { connected, broadcast, sendCursor, remoteUsers, remoteCursors } = useCollaboration({
+        diagramId,
+        userId,
+        username,
+        canEdit,
+        onRemoteOp,
+    });
+
     const deleteSelected = useCallback(() => {
         if (!canEdit) return;
         if (selectedIds.size > 0) {
@@ -333,6 +404,50 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
             setSelectedLineId(null);
         }
     }, [canEdit, pushHistory, selectedIds, selectedLineId]);
+
+    const alignBlocks = useCallback((how: 'left' | 'center-h' | 'right' | 'top' | 'center-v' | 'bottom') => {
+        if (!canEdit || selectedIds.size < 2) return;
+        pushHistory();
+        setElements((cur) => {
+            const sel = cur.filter(isBlock).filter((b) => selectedIds.has(b.id));
+            return cur.map((el) => {
+                if (!isBlock(el) || !selectedIds.has(el.id)) return el;
+                let x = el.x, y = el.y;
+                if (how === 'left')     x = Math.min(...sel.map((b) => b.x));
+                if (how === 'right')  { const r = Math.max(...sel.map((b) => b.x + b.width));  x = r - el.width; }
+                if (how === 'center-h') { const cx = sel.reduce((s, b) => s + b.x + b.width / 2, 0) / sel.length; x = cx - el.width / 2; }
+                if (how === 'top')      y = Math.min(...sel.map((b) => b.y));
+                if (how === 'bottom') { const bt = Math.max(...sel.map((b) => b.y + b.height)); y = bt - el.height; }
+                if (how === 'center-v') { const cy = sel.reduce((s, b) => s + b.y + b.height / 2, 0) / sel.length; y = cy - el.height / 2; }
+                return { ...el, x, y };
+            });
+        });
+    }, [canEdit, selectedIds, pushHistory]);
+
+    const distributeBlocks = useCallback((axis: 'h' | 'v') => {
+        if (!canEdit || selectedIds.size < 3) return;
+        pushHistory();
+        setElements((cur) => {
+            const sel = cur.filter(isBlock).filter((b) => selectedIds.has(b.id));
+            if (axis === 'h') {
+                const sorted = [...sel].sort((a, b) => a.x - b.x);
+                const span = Math.max(...sorted.map((b) => b.x + b.width)) - sorted[0].x;
+                const totalW = sorted.reduce((s, b) => s + b.width, 0);
+                const gap = (span - totalW) / (sorted.length - 1);
+                let cursor = sorted[0].x;
+                const pos = new Map(sorted.map((b) => { const v = cursor; cursor += b.width + gap; return [b.id, v] as [string, number]; }));
+                return cur.map((el) => isBlock(el) && selectedIds.has(el.id) ? { ...el, x: pos.get(el.id) ?? el.x } : el);
+            } else {
+                const sorted = [...sel].sort((a, b) => a.y - b.y);
+                const span = Math.max(...sorted.map((b) => b.y + b.height)) - sorted[0].y;
+                const totalH = sorted.reduce((s, b) => s + b.height, 0);
+                const gap = (span - totalH) / (sorted.length - 1);
+                let cursor = sorted[0].y;
+                const pos = new Map(sorted.map((b) => { const v = cursor; cursor += b.height + gap; return [b.id, v] as [string, number]; }));
+                return cur.map((el) => isBlock(el) && selectedIds.has(el.id) ? { ...el, y: pos.get(el.id) ?? el.y } : el);
+            }
+        });
+    }, [canEdit, selectedIds, pushHistory]);
 
     // ── keyboard shortcuts ────────────────────────────────────────────────────
     const keyActionsRef = useRef({ undo, redo, copySelected, paste, deleteSelected });
@@ -361,8 +476,18 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
             await saveDiagramEditorState(diagramId, { template, blocks: els });
             setSaveStatus('saved');
             setTimeout(() => setSaveStatus('idle'), 2000);
-        } catch { setSaveStatus('error'); }
-    }, [diagramId, template]);
+        } catch {
+            setSaveStatus('error');
+            toast.error('Не удалось сохранить диаграмму');
+        }
+    }, [diagramId, template, toast]);
+
+    useEffect(() => {
+        if (saveStatus !== 'error') return;
+        const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); };
+        window.addEventListener('beforeunload', handler);
+        return () => window.removeEventListener('beforeunload', handler);
+    }, [saveStatus]);
 
     useEffect(() => {
         if (!canEdit) return;
@@ -370,6 +495,27 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
         saveTimerRef.current = setTimeout(() => void saveNow(elements), 2000);
         return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
     }, [elements, canEdit, saveNow]);
+
+    // ── broadcast canvas changes to collaborators ─────────────────────────────
+    useEffect(() => {
+        if (!connected || !canEdit) return;
+        const prev = lastBroadcastedRef.current;
+        const curr = new Map(elements.map(e => [(e as { id: string }).id, e]));
+        const added: DiagramElement[] = [];
+        const updated: DiagramElement[] = [];
+        const deletedIds: string[] = [];
+        for (const [id, el] of curr) {
+            if (!prev.has(id)) added.push(el);
+            else if (prev.get(id) !== el) updated.push(el);
+        }
+        for (const id of prev.keys()) {
+            if (!curr.has(id)) deletedIds.push(id);
+        }
+        if (added.length || updated.length || deletedIds.length) {
+            broadcast({ added, updated, deletedIds });
+            lastBroadcastedRef.current = curr;
+        }
+    }, [elements, connected, canEdit, broadcast]);
 
     // ── zoom wheel ────────────────────────────────────────────────────────────
     useEffect(() => {
@@ -538,6 +684,8 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
     };
 
     const onCanvasPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+        const _cp = getCanvasPoint(e.clientX, e.clientY);
+        sendCursor(_cp.x, _cp.y);
         if (tool === 'pan') {
             if (!panRef.current) return;
             setPanX(panRef.current.scrollLeft + (e.clientX - panRef.current.startX));
@@ -687,6 +835,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
         let moved = false;
         const currentZoom = zoom;
 
+        const COORD_LIMIT = 50000;
         const move = (me: PointerEvent) => {
             moved = true;
             const dx = snapV((me.clientX - sx) / currentZoom, snapToGrid);
@@ -695,7 +844,10 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                 if (!isBlock(el) || !moveIds.has(el.id)) return el;
                 const start = startPositions.get(el.id);
                 if (!start) return el;
-                return { ...el, x: snapV(start.x + dx, snapToGrid), y: snapV(start.y + dy, snapToGrid) };
+                const nx = snapV(start.x + dx, snapToGrid);
+                const ny = snapV(start.y + dy, snapToGrid);
+                if (!isFinite(nx) || !isFinite(ny)) return el;
+                return { ...el, x: Math.max(-COORD_LIMIT, Math.min(COORD_LIMIT, nx)), y: Math.max(-COORD_LIMIT, Math.min(COORD_LIMIT, ny)) };
             }));
         };
         const up = () => {
@@ -836,6 +988,9 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
 
     const handleExport = async (format: ExportFormat) => {
         setIsExporting(true);
+        // Yield two frames so React can paint the loading indicator before the
+        // main thread is blocked by html2canvas or PDF generation.
+        await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
         try {
             const fname = renaming || diagramName || 'diagram';
             if (format === 'json') { downloadBlob(new Blob([JSON.stringify(elements, null, 2)], { type: 'application/json' }), `${fname}.json`); setExportOpen(false); return; }
@@ -912,6 +1067,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
     // ── image insert ────────────────────────────────────────────────────────────
     const insertImageFile = (file: File) => {
         if (!file.type.startsWith('image/')) { toast.error('Можно вставить только изображение'); return; }
+        if (file.size > 5 * 1024 * 1024) { toast.error('Изображение слишком большое (максимум 5 МБ)'); return; }
         const reader = new FileReader();
         reader.onload = () => {
             const src = typeof reader.result === 'string' ? reader.result : '';
@@ -935,6 +1091,10 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
 
     // ── draw.io import ──────────────────────────────────────────────────────────
     const importDrawioFile = async (file: File) => {
+        if (file.size > 10 * 1024 * 1024) {
+            toast.error('Файл слишком большой (максимум 10 МБ)');
+            return;
+        }
         try {
             const text = await file.text();
             const { parseDrawioToElements } = await import('../api/drawioImport');
@@ -986,6 +1146,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                     </span>
                 ) : null}
                 <div className={styles.TopBarRight}>
+                    <CollaborationAvatars users={remoteUsers} connected={connected} />
                     {canEdit ? (
                         <>
                             <button type="button" className={styles.TopBarBtn} title="Отменить (Ctrl+Z)" onClick={undo}><UndoOutlinedIcon fontSize="small" /></button>
@@ -1003,6 +1164,16 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                     </button>
                 </div>
             </header>
+
+            {/* ── SAVE ERROR BANNER ── */}
+            {saveStatus === 'error' ? (
+                <div className={styles.SaveErrorBanner}>
+                    <span>⚠ Изменения не сохранены</span>
+                    <button type="button" onClick={() => void saveNow(elementsRef.current)}>
+                        Повторить
+                    </button>
+                </div>
+            ) : null}
 
             {/* ── SETTINGS PANEL ── */}
             {menuOpen ? (
@@ -1022,7 +1193,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                             <Typography variant="caption" style={{ fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-secondary, #888)' }}>Доступ</Typography>
                             <label className={styles.PublicToggle}>
                                 <span>Публичный просмотр</span>
-                                <button type="button" role="switch" aria-checked={isPublic} className={`${styles.ToggleSwitch} ${isPublic ? styles.ToggleSwitch_on : ''}`} onClick={() => setIsPublic((v) => !v)} />
+                                <button type="button" role="switch" aria-checked={isPublic} className={`${styles.ToggleSwitch} ${isPublic ? styles.ToggleSwitch_on : ''}`} onClick={() => void handleTogglePublic()} disabled={currentUserRole !== 'OWNER'} />
                             </label>
                             <div className={styles.ShareLinkRow}>
                                 <span className={styles.ShareLinkText} title={shareUrl}>{shareUrl}</span>
@@ -1320,6 +1491,9 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                                         ...(block.strokeColor ? { '--block-stroke': block.strokeColor } as React.CSSProperties : {}),
                                         ...(block.strokeWidth ? { '--block-stroke-width': `${block.strokeWidth}px` } as React.CSSProperties : {}),
                                         ...(block.fontSize ? { '--block-font-size': `${block.fontSize}px` } as React.CSSProperties : {}),
+                                        ...(block.fontWeight ? { '--block-font-weight': block.fontWeight } as React.CSSProperties : {}),
+                                        ...(block.fontStyle ? { '--block-font-style': block.fontStyle } as React.CSSProperties : {}),
+                                        ...(block.textColor ? { '--block-text-color': block.textColor } as React.CSSProperties : {}),
                                     }}
                                     onPointerDown={(e) => onBlockPointerDown(e, block)}
                                     onDoubleClick={() => startEditing(block)}
@@ -1375,11 +1549,11 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                                         <div className={styles.BlockShapeContent}>
                                             {block.type === 'diamond' ? (
                                                 <svg className={styles.ShapeSvg} viewBox="0 0 100 70" preserveAspectRatio="none">
-                                                    <polygon points="50,2 98,35 50,68 2,35" fill="none" stroke="currentColor" strokeWidth="2.5" />
+                                                    <polygon points="50,2 98,35 50,68 2,35" fill={block.fillColor ?? 'none'} stroke={block.strokeColor ?? 'currentColor'} strokeWidth={block.strokeWidth ?? 2.5} />
                                                 </svg>
                                             ) : block.type === 'triangle' ? (
                                                 <svg className={styles.ShapeSvg} viewBox="0 0 100 80" preserveAspectRatio="none">
-                                                    <polygon points="50,2 98,78 2,78" fill="none" stroke="currentColor" strokeWidth="2.5" />
+                                                    <polygon points="50,2 98,78 2,78" fill={block.fillColor ?? 'none'} stroke={block.strokeColor ?? 'currentColor'} strokeWidth={block.strokeWidth ?? 2.5} />
                                                 </svg>
                                             ) : null}
                                             <span className={styles.ShapeLabel}>{block.title}</span>
@@ -1421,6 +1595,8 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                     </div>
 
                     {/* ── MINIMAP ── */}
+                    <RemoteCursors cursors={remoteCursors} zoom={zoom} panX={panX} panY={panY} />
+
                     {minimapBounds && elements.length > 0 ? (
                         <div className={styles.Minimap} title="Миникарта">
                             <svg width={MINI_W} height={MINI_H}
@@ -1474,13 +1650,31 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                                 </div>
                                 <div className={styles.PropRow}>
                                     <label className={styles.PropLabel}>Размер текста</label>
-                                    <input type="range" min="10" max="24" step="1"
+                                    <input type="range" min="10" max="36" step="1"
                                         value={selectedBlock.fontSize ?? 13}
                                         onChange={(e) => updateEl(selectedBlock.id, { fontSize: Number(e.target.value) })}
                                         onPointerUp={() => pushHistory()}
                                         style={{ flex: 1 }}
                                     />
                                     <span className={styles.PropValue}>{selectedBlock.fontSize ?? 13}px</span>
+                                </div>
+                                <div className={styles.PropRow}>
+                                    <label className={styles.PropLabel}>Цвет текста</label>
+                                    <input type="color" className={styles.ColorInput}
+                                        value={selectedBlock.textColor ?? '#000000'}
+                                        onChange={(e) => { pushHistory(); updateEl(selectedBlock.id, { textColor: e.target.value }); }}
+                                    />
+                                </div>
+                                <div className={styles.PropRow}>
+                                    <label className={styles.PropLabel}>Начертание</label>
+                                    <button type="button"
+                                        className={`${styles.FmtBtn}${selectedBlock.fontWeight === 'bold' ? ` ${styles.FmtBtn_on}` : ''}`}
+                                        onClick={() => { pushHistory(); updateEl(selectedBlock.id, { fontWeight: selectedBlock.fontWeight === 'bold' ? 'normal' : 'bold' }); }}
+                                    ><b>B</b></button>
+                                    <button type="button"
+                                        className={`${styles.FmtBtn}${selectedBlock.fontStyle === 'italic' ? ` ${styles.FmtBtn_on}` : ''}`}
+                                        onClick={() => { pushHistory(); updateEl(selectedBlock.id, { fontStyle: selectedBlock.fontStyle === 'italic' ? 'normal' : 'italic' }); }}
+                                    ><i>I</i></button>
                                 </div>
                             </>
                         ) : selectedLine ? (
@@ -1510,6 +1704,25 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                                 Выберите блок или линию
                             </Typography>
                         )}
+                    </div>
+                ) : null}
+
+                {canEdit && selectedIds.size >= 2 ? (
+                    <div className={styles.AlignBar}>
+                        <button type="button" className={styles.AlignBtn} title="По левому краю" onClick={() => alignBlocks('left')}><AlignHorizontalLeftOutlinedIcon fontSize="small" /></button>
+                        <button type="button" className={styles.AlignBtn} title="По центру (гор.)" onClick={() => alignBlocks('center-h')}><AlignHorizontalCenterOutlinedIcon fontSize="small" /></button>
+                        <button type="button" className={styles.AlignBtn} title="По правому краю" onClick={() => alignBlocks('right')}><AlignHorizontalRightOutlinedIcon fontSize="small" /></button>
+                        <div className={styles.AlignBarDivider} />
+                        <button type="button" className={styles.AlignBtn} title="По верхнему краю" onClick={() => alignBlocks('top')}><AlignVerticalTopOutlinedIcon fontSize="small" /></button>
+                        <button type="button" className={styles.AlignBtn} title="По центру (верт.)" onClick={() => alignBlocks('center-v')}><AlignVerticalCenterOutlinedIcon fontSize="small" /></button>
+                        <button type="button" className={styles.AlignBtn} title="По нижнему краю" onClick={() => alignBlocks('bottom')}><AlignVerticalBottomOutlinedIcon fontSize="small" /></button>
+                        {selectedIds.size >= 3 ? (
+                            <>
+                                <div className={styles.AlignBarDivider} />
+                                <button type="button" className={styles.AlignBtn} title="Распределить по горизонтали" onClick={() => distributeBlocks('h')} style={{ fontSize: 13 }}>⇔</button>
+                                <button type="button" className={styles.AlignBtn} title="Распределить по вертикали" onClick={() => distributeBlocks('v')} style={{ fontSize: 13 }}>⇕</button>
+                            </>
+                        ) : null}
                     </div>
                 ) : null}
             </div>
@@ -1615,10 +1828,11 @@ type DiagramEditorLoaderProps = {
     diagramId: number;
     diagramName: string;
     currentUserRole: string;
+    isPublic?: boolean;
 };
 
 export function DiagramEditorLoader(props: DiagramEditorLoaderProps) {
-    const { diagramId, diagramName, currentUserRole } = props;
+    const { diagramId, diagramName, currentUserRole, isPublic } = props;
     const { t } = useLocale();
 
     const q = useQuery({
@@ -1659,6 +1873,7 @@ export function DiagramEditorLoader(props: DiagramEditorLoaderProps) {
             diagramName={diagramName}
             currentUserRole={currentUserRole}
             initialEditorState={q.data}
+            isPublic={isPublic}
         />
     );
 }

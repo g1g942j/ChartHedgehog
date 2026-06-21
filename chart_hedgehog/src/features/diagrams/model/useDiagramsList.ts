@@ -30,9 +30,8 @@ export function useDiagramsList() {
         error,
         isPending: isLoading,
     } = useQuery({
-        queryKey: ['myDiagrams', currentUserQuery.data?.username],
-        queryFn: () =>
-            fetchMyDiagrams(currentUserQuery.data?.username),
+        queryKey: ['myDiagrams'],
+        queryFn: fetchMyDiagrams,
         enabled: currentUserQuery.isSuccess,
     });
 

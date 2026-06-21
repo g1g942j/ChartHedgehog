@@ -129,7 +129,16 @@ export function ProfilePage() {
     }
 
     if (!userMeta) {
-        return null;
+        return (
+            <>
+                <AppNavbar />
+                <main className={styles.Page}>
+                    <Alert severity="error">
+                        Не удалось загрузить данные профиля. Попробуйте обновить страницу.
+                    </Alert>
+                </main>
+            </>
+        );
     }
 
     return (

@@ -34,7 +34,7 @@ function readJson<T>(key: string, fallback: T): T {
         return fallback;
     }
     try {
-        const raw = window.sessionStorage.getItem(key);
+        const raw = window.localStorage.getItem(key);
         if (!raw) {
             return fallback;
         }
@@ -45,7 +45,7 @@ function readJson<T>(key: string, fallback: T): T {
 }
 
 function writeJson<T>(key: string, value: T): void {
-    window.sessionStorage.setItem(key, JSON.stringify(value));
+    window.localStorage.setItem(key, JSON.stringify(value));
 }
 
 export function getSessionUser(): SessionUser | null {
@@ -57,8 +57,8 @@ export function setSessionUser(user: SessionUser): void {
 }
 
 export function clearSession(): void {
-    window.sessionStorage.removeItem(SESSION_KEY);
-    window.sessionStorage.removeItem(DIAGRAMS_KEY);
+    window.localStorage.removeItem(SESSION_KEY);
+    window.localStorage.removeItem(DIAGRAMS_KEY);
 }
 
 export function getStoredDiagrams(): StoredDiagram[] {

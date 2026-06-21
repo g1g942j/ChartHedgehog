@@ -4,6 +4,7 @@ import com.example.backend.service.UserService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -28,10 +29,26 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-                .csrf(csrf -> csrf.disable()) // Ошибка(SAST)
+                .csrf(csrf -> csrf.disable())
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+                .exceptionHandling(ex -> ex
+                        .authenticationEntryPoint((request, response, e) -> {
+                            response.setStatus(401);
+                            response.setContentType("application/json");
+                            response.setCharacterEncoding("UTF-8");
+                            response.getWriter().write("{\"error\": \"Not authenticated\"}");
+                        })
+                        .accessDeniedHandler((request, response, e) -> {
+                            response.setStatus(403);
+                            response.setContentType("application/json");
+                            response.setCharacterEncoding("UTF-8");
+                            response.getWriter().write("{\"error\": \"Access denied\"}");
+                        })
+                )
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/auth/**", "/h2-console/**").permitAll()
+                        .requestMatchers("/api/auth/**", "/h2-console/**", "/ws/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/diagrams/my").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/diagrams/*", "/api/diagrams/*/content").permitAll()
                         .anyRequest().authenticated()
                 )
                 .sessionManagement(session -> session
@@ -65,14 +82,14 @@ public class SecurityConfig {
                 )
                 .headers(headers -> headers
                         .frameOptions(frame -> frame.sameOrigin())
-                        .contentSecurityPolicy(csp -> csp // Решение(2DAST) Решение(3DAST)
-                                .policyDirectives("default-src 'self'; frame-ancestors 'self'; form-action 'self'") // Решение(4DAST)
+                        .contentSecurityPolicy(csp -> csp
+                                .policyDirectives("default-src 'self'; frame-ancestors 'self'; form-action 'self'")
                         )
                         .addHeaderWriter((request, response) -> {
-                            response.setHeader("Cross-Origin-Opener-Policy", "same-origin"); // Решение(6DAST)
-                            response.setHeader("Cross-Origin-Embedder-Policy", "require-corp"); // Решение(5DAST)
-                            response.setHeader("Cross-Origin-Resource-Policy", "same-origin"); // Решение(7DAST)
-                            response.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()"); // Решение(8DAST)
+                            response.setHeader("Cross-Origin-Opener-Policy", "same-origin");
+                            response.setHeader("Cross-Origin-Embedder-Policy", "require-corp");
+                            response.setHeader("Cross-Origin-Resource-Policy", "same-origin");
+                            response.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
                         })
                 );
 
