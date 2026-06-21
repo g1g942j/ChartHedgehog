@@ -1045,6 +1045,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
     // ── image insert ────────────────────────────────────────────────────────────
     const insertImageFile = (file: File) => {
         if (!file.type.startsWith('image/')) { toast.error('Можно вставить только изображение'); return; }
+        if (file.size > 5 * 1024 * 1024) { toast.error('Изображение слишком большое (максимум 5 МБ)'); return; }
         const reader = new FileReader();
         reader.onload = () => {
             const src = typeof reader.result === 'string' ? reader.result : '';
@@ -1068,6 +1069,10 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
 
     // ── draw.io import ──────────────────────────────────────────────────────────
     const importDrawioFile = async (file: File) => {
+        if (file.size > 10 * 1024 * 1024) {
+            toast.error('Файл слишком большой (максимум 10 МБ)');
+            return;
+        }
         try {
             const text = await file.text();
             const { parseDrawioToElements } = await import('../api/drawioImport');
