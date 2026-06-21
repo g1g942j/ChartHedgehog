@@ -62,7 +62,7 @@ export function useDiagramsList() {
             await createDiagram(name);
             setNewName('');
             await queryClient.invalidateQueries({ queryKey: ['myDiagrams'] });
-            toast.success('Диаграмма создана');
+            toast.success(t.diagrams.created);
         } catch (err) {
             toast.error(err instanceof Error ? err.message : t.diagrams.createError);
         } finally {
@@ -75,9 +75,9 @@ export function useDiagramsList() {
         try {
             await cloneDiagram(id);
             await queryClient.invalidateQueries({ queryKey: ['myDiagrams'] });
-            toast.success('Диаграмма скопирована');
+            toast.success(t.diagrams.cloned);
         } catch (err) {
-            toast.error(err instanceof Error ? err.message : 'Не удалось скопировать');
+            toast.error(err instanceof Error ? err.message : t.diagrams.cloneError);
         } finally {
             setCloningId(null);
         }

@@ -36,7 +36,7 @@ async function addParticipantViaAPI(
   ownerDriver: WebDriver,
   diagramId: number,
   userIdentifier: string,
-  role: "EDITOR" | "VIEWER" | "COMMENTATOR",
+  role: "EDITOR" | "VIEWER",
 ): Promise<boolean> {
   const cookies = await ownerDriver.manage().getCookies();
   const sessionCookie = cookies.find((c) => c.name === "JSESSIONID");

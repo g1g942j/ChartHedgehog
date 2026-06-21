@@ -186,7 +186,7 @@ export const DIAGRAM_TEMPLATES: DiagramTemplate[] = [
         blocks: [
             { id: 'uml-user', type: 'class', title: 'User', body: '+ id: Long\n+ username: String\n+ email: String', x: 80, y: 80, width: 210, height: 140 },
             { id: 'uml-diagram', type: 'class', title: 'Diagram', body: '+ id: Long\n+ name: String\n+ updatedAt: Date', x: 380, y: 90, width: 220, height: 140 },
-            { id: 'uml-role', type: 'enum', title: 'ParticipantRole', body: 'OWNER\nEDITOR\nCOMMENTATOR\nVIEWER', x: 230, y: 300, width: 220, height: 150 },
+            { id: 'uml-role', type: 'enum', title: 'ParticipantRole', body: 'OWNER\nEDITOR\nVIEWER', x: 230, y: 300, width: 220, height: 120 },
         ],
     },
 ];
@@ -347,9 +347,21 @@ function buildPreviewSvg(elements: DiagramElement[]): string {
     const minX = Math.min(...xs) - pad, minY = Math.min(...ys) - pad;
     const w = Math.max(Math.max(...xs) + pad - minX, 1);
     const h = Math.max(Math.max(...ys) + pad - minY, 1);
-    const svgLines = lines.map((l) => { const c = resolveLineCoords(l, bMap); return `<line x1="${c.x1}" y1="${c.y1}" x2="${c.x2}" y2="${c.y2}" stroke="#94a3b8" stroke-width="1.5"/>`; }).join('');
-    const svgBlocks = blocks.map((b) => `<rect x="${b.x}" y="${b.y}" width="${b.width}" height="${b.height}" fill="#eff6ff" stroke="#3b82f6" stroke-width="1.5" rx="4"/>`).join('');
-    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${minX} ${minY} ${w} ${h}">${svgLines}${svgBlocks}</svg>`;
+    const renderBlock = (b: DiagramCanvasBlock): string => {
+        const { x, y, width: bw, height: bh } = b;
+        const fill = '#eff6ff', stroke = '#3b82f6', sw = '1.5';
+        const cx = x + bw / 2, cy = y + bh / 2;
+        if (b.type === 'circle' || b.type === 'er-attribute') return `<ellipse cx="${cx}" cy="${cy}" rx="${bw / 2}" ry="${bh / 2}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>`;
+        if (b.type === 'bpmn-event') return `<circle cx="${cx}" cy="${cy}" r="${Math.min(bw, bh) / 2 - 1}" fill="${fill}" stroke="#22c55e" stroke-width="${sw}"/>`;
+        if (b.type === 'bpmn-end') return `<circle cx="${cx}" cy="${cy}" r="${Math.min(bw, bh) / 2 - 1}" fill="${fill}" stroke="#ef4444" stroke-width="3"/>`;
+        if (b.type === 'diamond' || b.type === 'er-relation' || b.type === 'bpmn-gateway') return `<polygon points="${cx},${y} ${x + bw},${cy} ${cx},${y + bh} ${x},${cy}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>`;
+        if (b.type === 'triangle') return `<polygon points="${cx},${y} ${x + bw},${y + bh} ${x},${y + bh}" fill="${fill}" stroke="#22c55e" stroke-width="${sw}"/>`;
+        if (b.type === 'sticky' || b.type === 'comment') return `<rect x="${x}" y="${y}" width="${bw}" height="${bh}" fill="#fef9c3" stroke="#eab308" stroke-width="${sw}" rx="4"/>`;
+        return `<rect x="${x}" y="${y}" width="${bw}" height="${bh}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" rx="4"/>`;
+    };
+    const svgBlocks = blocks.map(renderBlock).join('');
+    const svgLines = lines.map((l) => { const c = resolveLineCoords(l, bMap); return `<line x1="${c.x1}" y1="${c.y1}" x2="${c.x2}" y2="${c.y2}" stroke="#64748b" stroke-width="1.5"/>`; }).join('');
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${minX} ${minY} ${w} ${h}">${svgBlocks}${svgLines}</svg>`;
 }
 
 export async function saveDiagramEditorState(diagramId: number, state: DiagramEditorState): Promise<void> {
