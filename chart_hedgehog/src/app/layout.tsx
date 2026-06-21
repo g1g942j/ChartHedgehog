@@ -16,7 +16,15 @@ export default function RootLayout({
     children: React.ReactNode;
 }>) {
     return (
-        <html lang="ru">
+        <html lang="ru" suppressHydrationWarning>
+            {/* Blocking script: applies saved theme class before first paint to prevent FOUC */}
+            <head>
+                <script
+                    dangerouslySetInnerHTML={{
+                        __html: `(function(){var t=localStorage.getItem('ChartHedgehog_theme');if(t==='light'||t==='dark')document.documentElement.classList.add('theme-'+t);})();`,
+                    }}
+                />
+            </head>
             <body>
                 <AppRouterCacheProvider>
                     <AppProviders>{children}</AppProviders>

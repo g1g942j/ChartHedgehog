@@ -514,10 +514,9 @@
     flex: 1;
     overflow: hidden;
     background:
-        linear-gradient(var(--border) 1px, transparent 1px),
-        linear-gradient(90deg, var(--border) 1px, transparent 1px),
+        linear-gradient(var(--border) 1px, transparent 1px) 0 0 / 24px 24px,
+        linear-gradient(90deg, var(--border) 1px, transparent 1px) 0 0 / 24px 24px,
         var(--bg-soft);
-    background-size: 24px 24px;
 }
 
 .Canvas_drawing  { cursor: crosshair; }
