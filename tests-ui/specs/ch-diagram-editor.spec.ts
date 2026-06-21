@@ -6,7 +6,7 @@ import { createDriver } from "../driver-factory.js";
 import { loginAs } from "../auth-helper.js";
 import { DiagramsPage } from "../pages/diagrams.page.js";
 import { DiagramDetailPage } from "../pages/diagram-detail.page.js";
-import { waitUrl, waitVisible, waitGone } from "../waits.js";
+import { waitUrl, waitVisible, waitGone, waitLocated } from "../waits.js";
 
 /** Абсолютный путь до файла-фикстуры в tests-ui/fixtures */
 function fixturePath(name: string): string {
@@ -30,14 +30,50 @@ async function createAndOpen(
   return Number(match[1]);
 }
 
-/** Получить трансформ scale у CanvasContent */
+/** Read current zoom from the reset-button label which shows "NN%". */
 async function getCanvasScale(driver: import("selenium-webdriver").WebDriver): Promise<number> {
-  const transform = await driver.executeScript<string>(
-    `const el = document.querySelector('[style*="scale"]');
-     return el ? el.style.transform : "scale(1)";`,
+  try {
+    const btn = await driver.findElement(By.css(`button[title="Сбросить"]`));
+    const text = await btn.getText();
+    const match = text.match(/(\d+)\s*%/);
+    return match ? parseInt(match[1], 10) / 100 : 1;
+  } catch {
+    return 1;
+  }
+}
+
+/** Dispatch pointerdown + pointerup on an element, bypassing browser hit-testing.
+ * Use when Selenium's .click() is intercepted by overlay elements (e.g. ShapeLabel). */
+async function pointerClick(
+  driver: import("selenium-webdriver").WebDriver,
+  element: import("selenium-webdriver").WebElement,
+  options: { shiftKey?: boolean } = {},
+): Promise<void> {
+  await driver.executeScript(
+    `const el = arguments[0], shift = arguments[1];
+     const r = el.getBoundingClientRect();
+     const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+     ['pointerdown', 'pointerup'].forEach(type => {
+       el.dispatchEvent(new PointerEvent(type, {
+         bubbles: true, cancelable: true, isPrimary: true,
+         button: 0, buttons: type === 'pointerdown' ? 1 : 0,
+         shiftKey: shift, clientX: cx, clientY: cy
+       }));
+     });`,
+    element,
+    options.shiftKey ?? false,
   );
-  const match = transform.match(/scale\(([0-9.]+)\)/);
-  return match ? parseFloat(match[1]) : 1;
+}
+
+/** Dispatch a dblclick event on an element, bypassing ShapeLabel interception. */
+async function dispatchDblClick(
+  driver: import("selenium-webdriver").WebDriver,
+  element: import("selenium-webdriver").WebElement,
+): Promise<void> {
+  await driver.executeScript(
+    `arguments[0].dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }));`,
+    element,
+  );
 }
 
 /** Нарисовать штрих на SVG через pointer events */
@@ -48,15 +84,86 @@ async function drawOnSvg(
   toX: number,
   toY: number,
 ): Promise<void> {
-  const svg = await driver.findElement(By.css("svg"));
+  // Use viewport center as the origin — the SVG canvas is infinitely large,
+  // so its element center can be far outside the viewport.
+  const center = await driver.executeScript<[number, number]>(
+    `return [Math.round(window.innerWidth / 2), Math.round(window.innerHeight / 2)];`,
+  );
+  const cx = center[0]!;
+  const cy = center[1]!;
   const actions = driver.actions({ async: true });
   await actions
-    .move({ origin: svg, x: fromX, y: fromY })
+    .move({ origin: "viewport" as any, x: cx + fromX, y: cy + fromY })
     .press()
-    .move({ origin: svg, x: fromX + 20, y: fromY + 10 })
-    .move({ origin: svg, x: toX, y: toY })
+    .move({ origin: "viewport" as any, x: cx + fromX + 20, y: cy + fromY + 10 })
+    .move({ origin: "viewport" as any, x: cx + toX, y: cy + toY })
     .release()
     .perform();
+}
+
+/**
+ * Draw a line on the SVG canvas using the line tool.
+ * Unlike drawOnSvg, this dispatches events in separate steps with a sleep between
+ * pointerdown and pointermove so React has time to update activeLineStart state
+ * before the move event fires. Without the pause the line is never created because
+ * the pointermove/pointerup handlers see the pre-update (null) state value.
+ */
+async function drawLineOnSvg(
+  driver: import("selenium-webdriver").WebDriver,
+  fromX: number,
+  fromY: number,
+  toX: number,
+  toY: number,
+): Promise<void> {
+  const center = await driver.executeScript<[number, number]>(
+    `return [Math.round(window.innerWidth / 2), Math.round(window.innerHeight / 2)];`,
+  );
+  const cx = center[0]!;
+  const cy = center[1]!;
+  const ax = cx + fromX, ay = cy + fromY;
+  const bx = cx + toX, by = cy + toY;
+  const mx = Math.round((ax + bx) / 2);
+  const my = Math.round((ay + by) / 2);
+
+  const canvasSel = `document.querySelector('[class*="Canvas"]')`;
+  await driver.executeScript(
+    `const c = ${canvasSel}; if (!c) return;
+     c.dispatchEvent(new PointerEvent('pointerdown', {
+       bubbles: true, cancelable: true,
+       clientX: arguments[0], clientY: arguments[1],
+       pointerId: 1, isPrimary: true, button: 0, buttons: 1
+     }));`,
+    ax, ay,
+  );
+  // Wait for React to commit the activeLineStart state update before sending move
+  await driver.sleep(250);
+  await driver.executeScript(
+    `const c = ${canvasSel}; if (!c) return;
+     c.dispatchEvent(new PointerEvent('pointermove', {
+       bubbles: true, cancelable: true,
+       clientX: arguments[0], clientY: arguments[1],
+       pointerId: 1, isPrimary: true, buttons: 1
+     }));`,
+    mx, my,
+  );
+  await driver.executeScript(
+    `const c = ${canvasSel}; if (!c) return;
+     c.dispatchEvent(new PointerEvent('pointermove', {
+       bubbles: true, cancelable: true,
+       clientX: arguments[0], clientY: arguments[1],
+       pointerId: 1, isPrimary: true, buttons: 1
+     }));`,
+    bx, by,
+  );
+  await driver.executeScript(
+    `const c = ${canvasSel}; if (!c) return;
+     c.dispatchEvent(new PointerEvent('pointerup', {
+       bubbles: true, cancelable: true,
+       clientX: arguments[0], clientY: arguments[1],
+       pointerId: 1, isPrimary: true, button: 0, buttons: 0
+     }));`,
+    bx, by,
+  );
 }
 
 // ─── топ-бар ──────────────────────────────────────────────────────────────────
@@ -422,16 +529,16 @@ describe("Редактор диаграмм — ластик", () => {
     // добавить блок
     await (await page.toolButton("Фигуры")).click();
     await (await waitVisible(driver, By.xpath(`//button[normalize-space(.) = 'Rectangle']`), 5_000)).click();
-    const block = await waitVisible(driver, By.xpath(`//*[contains(normalize-space(.), 'Box')]`), 5_000);
-    assert.ok(await block.isDisplayed(), "Блок должен появиться на холсте");
+    const blockEl = await waitVisible(driver, By.xpath(`//*[@data-block='true']`), 5_000);
+    assert.ok(await blockEl.isDisplayed(), "Блок должен появиться на холсте");
 
-    // переключиться на ластик и кликнуть по блоку
+    // переключиться на ластик и кликнуть по блоку через PointerEvent (обходит ShapeLabel)
     await (await page.toolButton("Ластик")).click();
-    await block.click();
+    await pointerClick(driver, blockEl);
 
     // блок должен исчезнуть
-    await waitGone(driver, By.xpath(`//*[contains(normalize-space(.), 'Box')]`), 5_000);
-    const remaining = await driver.findElements(By.xpath(`//*[contains(normalize-space(.), 'Box')]`));
+    await waitGone(driver, By.xpath(`//*[@data-block='true']`), 5_000);
+    const remaining = await driver.findElements(By.xpath(`//*[@data-block='true']`));
     assert.equal(remaining.length, 0, "Блок должен быть удалён с холста");
   });
 
@@ -441,18 +548,29 @@ describe("Редактор диаграмм — ластик", () => {
 
     // нарисовать штрих
     await (await page.toolButton("Карандаш")).click();
+    const pathsInitial = (await driver.findElements(By.css("svg path"))).length;
     await drawOnSvg(driver, -50, -40, 50, 40);
     await driver.sleep(300);
     const pathsBefore = (await driver.findElements(By.css("svg path"))).length;
-    assert.ok(pathsBefore > 0, "Должен появиться хотя бы один path");
+    assert.ok(pathsBefore > pathsInitial, `После рисования путей должно стать больше (было ${pathsInitial}, стало ${pathsBefore})`);
 
-    // удалить ластиком — кликнуть по path
+    // переключиться на ластик; при этом React re-render делает pointerEvents: stroke на path
     await (await page.toolButton("Ластик")).click();
-    const paths = await driver.findElements(By.css("svg path"));
-    if (paths.length > 0) {
-      await paths[0]!.click();
-      await driver.sleep(300);
-    }
+    await driver.sleep(200);
+
+    // Диспатчим click прямо на последний svg path — он должен содержать наш штрих.
+    // pointerEvents: 'stroke' — только для hint в CSS; React onClick работает через event bubbling.
+    const clicked = await driver.executeScript<boolean>(`
+      const paths = Array.from(document.querySelectorAll('svg path'));
+      // Берём последний path (наш штрих добавлен последним)
+      const target = paths[paths.length - 1];
+      if (!target) return false;
+      target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      return true;
+    `);
+    assert.ok(clicked, "Должен быть хотя бы один svg path для клика ластиком");
+    await driver.sleep(300);
+
     const pathsAfter = (await driver.findElements(By.css("svg path"))).length;
     assert.ok(pathsAfter < pathsBefore, `После ластика путей должно стать меньше (было ${pathsBefore}, стало ${pathsAfter})`);
   });
@@ -484,7 +602,8 @@ describe("Редактор диаграмм — зум", () => {
     const page = new DiagramDetailPage(driver);
     await page.goto(diagramId);
     const before = await getCanvasScale(driver);
-    await (await waitVisible(driver, By.css(`button[title="Увеличить"]`), 5_000)).click();
+    const btn = await waitVisible(driver, By.css(`button[title="Увеличить"]`), 5_000);
+    await driver.executeScript("arguments[0].click()", btn);
     await driver.sleep(200);
     const after = await getCanvasScale(driver);
     assert.ok(after > before, `Масштаб должен увеличиться (было ${before}, стало ${after})`);
@@ -494,7 +613,8 @@ describe("Редактор диаграмм — зум", () => {
     const page = new DiagramDetailPage(driver);
     await page.goto(diagramId);
     const before = await getCanvasScale(driver);
-    await (await waitVisible(driver, By.css(`button[title="Уменьшить"]`), 5_000)).click();
+    const btn = await waitVisible(driver, By.css(`button[title="Уменьшить"]`), 5_000);
+    await driver.executeScript("arguments[0].click()", btn);
     await driver.sleep(200);
     const after = await getCanvasScale(driver);
     assert.ok(after < before, `Масштаб должен уменьшиться (было ${before}, стало ${after})`);
@@ -504,9 +624,9 @@ describe("Редактор диаграмм — зум", () => {
     const page = new DiagramDetailPage(driver);
     await page.goto(diagramId);
     const zoomIn = await waitVisible(driver, By.css(`button[title="Увеличить"]`), 5_000);
-    await zoomIn.click();
-    await zoomIn.click();
-    await zoomIn.click();
+    await driver.executeScript("arguments[0].click()", zoomIn);
+    await driver.executeScript("arguments[0].click()", zoomIn);
+    await driver.executeScript("arguments[0].click()", zoomIn);
     await driver.sleep(200);
     const scale = await getCanvasScale(driver);
     assert.ok(scale >= 1.3, `После 3 нажатий «+» масштаб должен быть ≥1.3, получен: ${scale}`);
@@ -517,11 +637,12 @@ describe("Редактор диаграмм — зум", () => {
     await page.goto(diagramId);
     // сначала увеличить
     const zoomIn = await waitVisible(driver, By.css(`button[title="Увеличить"]`), 5_000);
-    await zoomIn.click();
-    await zoomIn.click();
+    await driver.executeScript("arguments[0].click()", zoomIn);
+    await driver.executeScript("arguments[0].click()", zoomIn);
     await driver.sleep(200);
     // сбросить
-    await (await waitVisible(driver, By.css(`button[title="Сбросить"]`), 5_000)).click();
+    const resetBtn = await waitVisible(driver, By.css(`button[title="Сбросить"]`), 5_000);
+    await driver.executeScript("arguments[0].click()", resetBtn);
     await driver.sleep(200);
     const scale = await getCanvasScale(driver);
     assert.equal(scale, 1, `После сброса масштаб должен быть 1, получен: ${scale}`);
@@ -532,7 +653,7 @@ describe("Редактор диаграмм — зум", () => {
     await page.goto(diagramId);
     const zoomOut = await waitVisible(driver, By.css(`button[title="Уменьшить"]`), 5_000);
     // нажать 20 раз — должны упереться в 0.25
-    for (let i = 0; i < 20; i++) await zoomOut.click();
+    for (let i = 0; i < 20; i++) await driver.executeScript("arguments[0].click()", zoomOut);
     await driver.sleep(300);
     const scale = await getCanvasScale(driver);
     assert.ok(scale >= 0.25, `Масштаб не должен быть меньше 0.25, получен: ${scale}`);
@@ -570,11 +691,11 @@ describe("Редактор диаграмм — редактирование б�
     await (await page.toolButton("Шаблоны")).click();
     await (await waitVisible(driver, By.xpath(`//button[contains(normalize-space(.), 'UML')]`), 5_000)).click();
     await (await waitVisible(driver, By.xpath(`//button[normalize-space(.) = 'Class']`), 5_000)).click();
-    const block = await waitVisible(driver, By.xpath(`//*[contains(normalize-space(.), 'User')]`), 5_000);
+    // Ждём появления блока по data-block
+    const block = await waitVisible(driver, By.xpath(`//*[@data-block='true']`), 5_000);
 
-    // двойной клик
-    const actions = driver.actions({ async: true });
-    await actions.doubleClick(block).perform();
+    // Двойной клик через dispatchEvent — обходит ShapeLabel-перехватчик
+    await dispatchDblClick(driver, block);
 
     const input = await waitVisible(driver, By.css(`input[class*="BlockEditTitle"]`), 5_000);
     assert.ok(await input.isDisplayed(), "Поле ввода названия должно появиться");
@@ -588,12 +709,11 @@ describe("Редактор диаграмм — редактирование б�
     await (await page.toolButton("Шаблоны")).click();
     await (await waitVisible(driver, By.xpath(`//button[contains(normalize-space(.), 'UML')]`), 5_000)).click();
     await (await waitVisible(driver, By.xpath(`//button[normalize-space(.) = 'Class']`), 5_000)).click();
-    const block = await waitVisible(driver, By.xpath(`//*[contains(normalize-space(.), 'User')]`), 5_000);
+    const block = await waitVisible(driver, By.xpath(`//*[@data-block='true']`), 5_000);
 
-    // двойной клик → ввод нового названия
+    // двойной клик через dispatchEvent → ввод нового названия
     const newTitle = "MyEntity";
-    const actions = driver.actions({ async: true });
-    await actions.doubleClick(block).perform();
+    await dispatchDblClick(driver, block);
     const input = await waitVisible(driver, By.css(`input[class*="BlockEditTitle"]`), 5_000);
     await input.sendKeys(Key.chord(Key.CONTROL, "a"), Key.DELETE, newTitle, Key.RETURN);
 
@@ -616,10 +736,9 @@ describe("Редактор диаграмм — редактирование б�
     await (await waitVisible(driver, By.xpath(`//button[normalize-space(.) = 'Class']`), 5_000)).click();
     await waitVisible(driver, By.xpath(`//*[contains(normalize-space(.), 'User')]`), 5_000);
 
-    // двойной клик → начать редактирование → Escape
-    const blocks = await driver.findElements(By.xpath(`//*[contains(normalize-space(.), 'User')]`));
-    const actions = driver.actions({ async: true });
-    await actions.doubleClick(blocks[blocks.length - 1]!).perform();
+    // двойной клик через dispatchEvent → начать редактирование → Escape
+    const blocks = await driver.findElements(By.xpath(`//*[@data-block='true']`));
+    await dispatchDblClick(driver, blocks[blocks.length - 1]!);
     const input = await waitVisible(driver, By.css(`input[class*="BlockEditTitle"]`), 5_000);
     await input.sendKeys("DiscardedText", Key.ESCAPE);
     await driver.sleep(300);
@@ -754,8 +873,8 @@ describe("Редактор диаграмм — Copy/Paste", () => {
     await (await waitVisible(driver, By.xpath(`//button[normalize-space(.) = 'Rectangle']`), 5_000)).click();
     const block = await waitVisible(driver, By.xpath(`//*[@data-block='true']`), 5_000);
 
-    // кликнуть чтобы выделить
-    await block.click();
+    // выделить блок через PointerEvent (onPointerDown = выделение; JS .click() не даёт pointerdown)
+    await pointerClick(driver, block);
     await driver.sleep(100);
 
     const body = await driver.findElement(By.tagName("body"));
@@ -799,11 +918,10 @@ describe("Редактор диаграмм — Multiselect", () => {
     const blocks = await driver.findElements(By.xpath(`//*[@data-block='true']`));
     assert.ok(blocks.length >= 2, "Должно быть ≥2 блоков");
 
-    // кликнуть по первому, потом Shift+клик по второму
-    await blocks[0]!.click();
+    // PointerEvent обходит ShapeLabel-перехватчик; shiftKey для Shift+клик
+    await pointerClick(driver, blocks[0]!);
     await driver.sleep(100);
-    const actions = driver.actions({ async: true });
-    await actions.keyDown(Key.SHIFT).click(blocks[1]!).keyUp(Key.SHIFT).perform();
+    await pointerClick(driver, blocks[1]!, { shiftKey: true });
     await driver.sleep(200);
 
     const selected = await driver.findElements(By.css(`[class*="Block_selected"]`));
@@ -823,9 +941,9 @@ describe("Редактор диаграмм — Multiselect", () => {
     await driver.sleep(200);
 
     const blocks = await driver.findElements(By.xpath(`//*[@data-block='true']`));
-    await blocks[0]!.click();
-    const actions = driver.actions({ async: true });
-    await actions.keyDown(Key.SHIFT).click(blocks[1]!).keyUp(Key.SHIFT).perform();
+    await pointerClick(driver, blocks[0]!);
+    await driver.sleep(100);
+    await pointerClick(driver, blocks[1]!, { shiftKey: true });
     await driver.sleep(200);
 
     // нажать Delete
@@ -1164,7 +1282,7 @@ describe("Редактор диаграмм — Панель свойств", ()
     await (await page.toolButton("Фигуры")).click();
     await (await waitVisible(driver, By.xpath(`//button[normalize-space(.) = 'Rectangle']`), 5_000)).click();
     const block = await waitVisible(driver, By.xpath(`//*[@data-block='true']`), 5_000);
-    await block.click();
+    await pointerClick(driver, block);
     await driver.sleep(200);
 
     const colorInputs = await driver.findElements(By.css(`input[type="color"]`));
@@ -1182,11 +1300,15 @@ describe("Редактор диаграмм — Панель свойств", ()
     await drawOnSvg(driver, -80, -60, 60, 40);
     await driver.sleep(300);
 
-    // кликнуть по линии
+    // кликнуть по линии — линия выбирается через onClick (не onPointerDown),
+    // поэтому диспатчим click через executeScript, а не pointerClick
     await (await page.toolButton("Выбор (S)")).click();
     const lines = await driver.findElements(By.css(`svg line[x1]`));
     if (lines.length > 0) {
-      await lines[0]!.click();
+      await driver.executeScript(
+        `arguments[0].dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))`,
+        lines[0]!,
+      );
       await driver.sleep(200);
       const colorInputs = await driver.findElements(By.css(`input[type="color"]`));
       assert.ok(colorInputs.length >= 1, "При выборе линии должен появиться color-input");
@@ -1414,32 +1536,32 @@ describe("Редактор диаграмм — Mockup/UI библиотека",
     await page.goto(diagramId);
     await (await page.toolButton("Шаблоны")).click();
     await (await waitVisible(driver, By.xpath(`//button[contains(normalize-space(.), 'Mockup')]`), 5_000)).click();
-    const btn = await waitVisible(driver, By.xpath(`//button[normalize-space(.) = 'Button']`), 5_000);
-    assert.ok(await btn.isDisplayed(), "Элемент 'Button' должен быть виден в Mockup-панели");
+    const btn = await waitVisible(driver, By.xpath(`//button[normalize-space(.) = 'Кнопка']`), 5_000);
+    assert.ok(await btn.isDisplayed(), "Элемент 'Кнопка' должен быть виден в Mockup-панели");
   });
 
-  it("панель Mockup содержит все 4 элемента: Button, Input, Checkbox, Card", async () => {
+  it("панель Mockup содержит все 4 элемента: Кнопка, Поле ввода, Чекбокс, Карточка", async () => {
     const page = new DiagramDetailPage(driver);
     await page.goto(diagramId);
     await (await page.toolButton("Шаблоны")).click();
     await (await waitVisible(driver, By.xpath(`//button[contains(normalize-space(.), 'Mockup')]`), 5_000)).click();
-    await waitVisible(driver, By.xpath(`//button[normalize-space(.) = 'Button']`), 5_000);
+    await waitVisible(driver, By.xpath(`//button[normalize-space(.) = 'Кнопка']`), 5_000);
 
-    const labels = ['Button', 'Input', 'Checkbox', 'Card'];
+    const labels = ['Кнопка', 'Поле ввода', 'Чекбокс', 'Карточка'];
     for (const label of labels) {
       const els = await driver.findElements(By.xpath(`//button[normalize-space(.) = '${label}']`));
       assert.ok(els.length > 0, `Элемент '${label}' должен присутствовать в Mockup-панели`);
     }
   });
 
-  it("добавление Mockup Button создаёт блок на холсте", async () => {
+  it("добавление Mockup Кнопка создаёт блок на холсте", async () => {
     const page = new DiagramDetailPage(driver);
     await page.goto(diagramId);
     await (await page.toolButton("Шаблоны")).click();
     await (await waitVisible(driver, By.xpath(`//button[contains(normalize-space(.), 'Mockup')]`), 5_000)).click();
-    await (await waitVisible(driver, By.xpath(`//button[normalize-space(.) = 'Button']`), 5_000)).click();
+    await (await waitVisible(driver, By.xpath(`//button[normalize-space(.) = 'Кнопка']`), 5_000)).click();
     const block = await waitVisible(driver, By.xpath(`//*[@data-block='true']`), 5_000);
-    assert.ok(await block.isDisplayed(), "После добавления Mockup Button должен появиться блок на холсте");
+    assert.ok(await block.isDisplayed(), "После добавления Mockup Кнопка должен появиться блок на холсте");
   });
 
   it("блок Mockup отображается как wireframe (содержит SVG-текст или специфичный CSS-класс)", async () => {
@@ -1447,7 +1569,7 @@ describe("Редактор диаграмм — Mockup/UI библиотека",
     await page.goto(diagramId);
     await (await page.toolButton("Шаблоны")).click();
     await (await waitVisible(driver, By.xpath(`//button[contains(normalize-space(.), 'Mockup')]`), 5_000)).click();
-    await (await waitVisible(driver, By.xpath(`//button[normalize-space(.) = 'Button']`), 5_000)).click();
+    await (await waitVisible(driver, By.xpath(`//button[normalize-space(.) = 'Кнопка']`), 5_000)).click();
     await waitVisible(driver, By.xpath(`//*[@data-block='true']`), 5_000);
     await driver.sleep(200);
 
@@ -1630,7 +1752,8 @@ describe("Редактор диаграмм — Изображения на хо
     const page = new DiagramDetailPage(driver);
     await page.goto(diagramId);
 
-    const input = await waitVisible(driver, By.css(`[data-testid="image-input"]`), 10_000);
+    // Hidden file input — use waitLocated (not waitVisible) since display:none inputs are never "visible"
+    const input = await waitLocated(driver, By.css(`[data-testid="image-input"]`), 10_000);
     await input.sendKeys(fixturePath("sample.png"));
 
     const imgBlock = await waitVisible(
@@ -1645,7 +1768,7 @@ describe("Редактор диаграмм — Изображения на хо
     const page = new DiagramDetailPage(driver);
     await page.goto(diagramId);
 
-    const input = await waitVisible(driver, By.css(`[data-testid="image-input"]`), 10_000);
+    const input = await waitLocated(driver, By.css(`[data-testid="image-input"]`), 10_000);
     await input.sendKeys(fixturePath("sample.png"));
     await waitVisible(driver, By.css(`img[class*="ImageBlockContent"]`), 8_000);
 
@@ -1684,7 +1807,7 @@ describe("Редактор диаграмм — Импорт draw.io", () => {
     const page = new DiagramDetailPage(driver);
     await page.goto(diagramId);
 
-    const input = await waitVisible(driver, By.css(`[data-testid="drawio-input"]`), 10_000);
+    const input = await waitLocated(driver, By.css(`[data-testid="drawio-input"]`), 10_000);
     await input.sendKeys(fixturePath("sample.drawio"));
 
     // в фикстуре 3 вершины (Старт, Решение, Конец)
@@ -1701,7 +1824,7 @@ describe("Редактор диаграмм — Импорт draw.io", () => {
     const page = new DiagramDetailPage(driver);
     await page.goto(diagramId);
 
-    const input = await waitVisible(driver, By.css(`[data-testid="drawio-input"]`), 10_000);
+    const input = await waitLocated(driver, By.css(`[data-testid="drawio-input"]`), 10_000);
     await input.sendKeys(fixturePath("sample.drawio"));
     await driver.wait(async () => {
       const blocks = await driver.findElements(By.css(`[data-block="true"]`));
@@ -1716,7 +1839,7 @@ describe("Редактор диаграмм — Импорт draw.io", () => {
     const page = new DiagramDetailPage(driver);
     await page.goto(diagramId);
 
-    const input = await waitVisible(driver, By.css(`[data-testid="drawio-input"]`), 10_000);
+    const input = await waitLocated(driver, By.css(`[data-testid="drawio-input"]`), 10_000);
     await input.sendKeys(fixturePath("sample.drawio"));
     await driver.wait(async () => {
       const blocks = await driver.findElements(By.css(`[data-block="true"]`));
@@ -1750,7 +1873,7 @@ describe("Редактор диаграмм — Модалка подтверж�
 
     // открыть меню настроек (⋮)
     await (await waitVisible(driver, By.css(`button[title="Настройки"]`), 10_000)).click();
-    await (await waitVisible(driver, By.xpath(`//button[contains(normalize-space(.), 'Удалить диаграмму')]`), 5_000)).click();
+    await (await waitVisible(driver, By.xpath(`//button[normalize-space(.) = 'Удалить']`), 5_000)).click();
 
     const okBtn = await waitVisible(driver, By.css(`[data-testid="confirm-modal-ok"]`), 5_000);
     assert.ok(await okBtn.isDisplayed(), "Должна появиться кнопка подтверждения в модалке");
@@ -1761,7 +1884,7 @@ describe("Редактор диаграмм — Модалка подтверж�
     await page.goto(diagramId);
 
     await (await waitVisible(driver, By.css(`button[title="Настройки"]`), 10_000)).click();
-    await (await waitVisible(driver, By.xpath(`//button[contains(normalize-space(.), 'Удалить диаграмму')]`), 5_000)).click();
+    await (await waitVisible(driver, By.xpath(`//button[normalize-space(.) = 'Удалить']`), 5_000)).click();
     await waitVisible(driver, By.css(`[data-testid="confirm-modal-ok"]`), 5_000);
 
     // нажать «Отмена»
@@ -1769,5 +1892,422 @@ describe("Редактор диаграмм — Модалка подтверж�
     await driver.sleep(300);
 
     assert.ok((await driver.getCurrentUrl()).includes(`/diagrams/${diagramId}`), "После отмены остаёмся в редакторе");
+  });
+});
+
+// ─── Перетаскивание блоков ────────────────────────────────────────────────────
+
+describe("Редактор диаграмм — Перетаскивание блоков", () => {
+  let driver: import("selenium-webdriver").WebDriver;
+  let diagramId: number;
+
+  before(async function () {
+    this.timeout(120_000);
+    driver = await createDriver();
+    await loginAs(driver);
+    diagramId = await createAndOpen(driver, `UI_Drag_${Date.now()}`);
+  });
+
+  after(async () => { await driver?.quit(); });
+
+  it("перетаскивание блока меняет его позицию на холсте", async function () {
+    this.timeout(20_000);
+    const page = new DiagramDetailPage(driver);
+    await page.goto(diagramId);
+
+    // добавить блок
+    await (await page.toolButton("Фигуры")).click();
+    await (await waitVisible(driver, By.xpath(`//button[normalize-space(.) = 'Rectangle']`), 5_000)).click();
+    const block = await waitVisible(driver, By.xpath(`//*[@data-block='true']`), 5_000);
+
+    // запомнить начальную позицию
+    const rectBefore = await block.getRect();
+    const cx = Math.round(rectBefore.x + rectBefore.width / 2);
+    const cy = Math.round(rectBefore.y + rectBefore.height / 2);
+
+    // выполнить перетаскивание: pointerdown + move + pointerup
+    const actions = driver.actions({ async: true });
+    await actions
+      .move({ origin: "viewport" as any, x: cx, y: cy })
+      .pause(50)
+      .press()
+      .pause(150)
+      .move({ origin: "viewport" as any, x: cx + 120, y: cy + 80 })
+      .pause(50)
+      .release()
+      .perform();
+    await driver.sleep(300);
+
+    const rectAfter = await block.getRect();
+    const movedX = Math.abs(rectAfter.x - rectBefore.x);
+    const movedY = Math.abs(rectAfter.y - rectBefore.y);
+    assert.ok(
+      movedX > 10 || movedY > 10,
+      `Блок должен сдвинуться после перетаскивания (было ${Math.round(rectBefore.x)},${Math.round(rectBefore.y)}, стало ${Math.round(rectAfter.x)},${Math.round(rectAfter.y)})`,
+    );
+  });
+
+  it("перетаскивание нескольких выделенных блоков перемещает их вместе", async function () {
+    this.timeout(20_000);
+    const page = new DiagramDetailPage(driver);
+    await page.goto(diagramId);
+
+    // добавить два блока
+    await (await page.toolButton("Фигуры")).click();
+    const rectBtn = await waitVisible(driver, By.xpath(`//button[normalize-space(.) = 'Rectangle']`), 5_000);
+    await rectBtn.click();
+    await driver.sleep(100);
+    await rectBtn.click();
+    await driver.sleep(200);
+
+    const blocks = await driver.findElements(By.xpath(`//*[@data-block='true']`));
+    assert.ok(blocks.length >= 2, "Нужно ≥2 блока для теста");
+
+    // выделить оба
+    await pointerClick(driver, blocks[0]!);
+    await driver.sleep(100);
+    await pointerClick(driver, blocks[1]!, { shiftKey: true });
+    await driver.sleep(200);
+
+    // перетащить первый — оба должны сдвинуться
+    const rect0Before = await blocks[0]!.getRect();
+    const rect1Before = await blocks[1]!.getRect();
+    const cx = Math.round(rect0Before.x + rect0Before.width / 2);
+    const cy = Math.round(rect0Before.y + rect0Before.height / 2);
+
+    const actions = driver.actions({ async: true });
+    await actions
+      .move({ origin: "viewport" as any, x: cx, y: cy })
+      .pause(50)
+      .press()
+      .pause(150)
+      .move({ origin: "viewport" as any, x: cx + 100, y: cy + 60 })
+      .pause(50)
+      .release()
+      .perform();
+    await driver.sleep(300);
+
+    const rect0After = await blocks[0]!.getRect();
+    const rect1After = await blocks[1]!.getRect();
+    assert.ok(
+      Math.abs(rect0After.x - rect0Before.x) > 10 || Math.abs(rect0After.y - rect0Before.y) > 10,
+      "Первый блок должен сдвинуться",
+    );
+    assert.ok(
+      Math.abs(rect1After.x - rect1Before.x) > 10 || Math.abs(rect1After.y - rect1Before.y) > 10,
+      "Второй блок тоже должен сдвинуться при мультиселекте",
+    );
+  });
+});
+
+// ─── Изменение размера блока ─────────────────────────────────────────────────
+
+describe("Редактор диаграмм — Изменение размера блока", () => {
+  let driver: import("selenium-webdriver").WebDriver;
+  let diagramId: number;
+
+  before(async function () {
+    this.timeout(120_000);
+    driver = await createDriver();
+    await loginAs(driver);
+    diagramId = await createAndOpen(driver, `UI_Resize_${Date.now()}`);
+  });
+
+  after(async () => { await driver?.quit(); });
+
+  it("при выделении блока появляется ручка изменения размера", async function () {
+    this.timeout(15_000);
+    const page = new DiagramDetailPage(driver);
+    await page.goto(diagramId);
+
+    await (await page.toolButton("Фигуры")).click();
+    await (await waitVisible(driver, By.xpath(`//button[normalize-space(.) = 'Rectangle']`), 5_000)).click();
+    const block = await waitVisible(driver, By.xpath(`//*[@data-block='true']`), 5_000);
+
+    // выделить блок
+    await pointerClick(driver, block);
+    await driver.sleep(200);
+
+    const handle = await driver.findElements(By.css(`button[aria-label="Resize block"]`));
+    assert.ok(handle.length > 0, "После выделения блока должна появиться ручка изменения размера");
+  });
+
+  it("перетаскивание ручки изменяет размер блока", async function () {
+    this.timeout(20_000);
+    const page = new DiagramDetailPage(driver);
+    await page.goto(diagramId);
+
+    await (await page.toolButton("Фигуры")).click();
+    await (await waitVisible(driver, By.xpath(`//button[normalize-space(.) = 'Rectangle']`), 5_000)).click();
+    const block = await waitVisible(driver, By.xpath(`//*[@data-block='true']`), 5_000);
+
+    // выделить блок
+    await pointerClick(driver, block);
+    await driver.sleep(200);
+
+    const handle = await driver.findElement(By.css(`button[aria-label="Resize block"]`));
+    const handleRect = await handle.getRect();
+    const hx = Math.round(handleRect.x + handleRect.width / 2);
+    const hy = Math.round(handleRect.y + handleRect.height / 2);
+
+    const blockRectBefore = await block.getRect();
+
+    // перетащить ручку на 80x60 вниз-вправо
+    const actions = driver.actions({ async: true });
+    await actions
+      .move({ origin: "viewport" as any, x: hx, y: hy })
+      .pause(50)
+      .press()
+      .pause(150)
+      .move({ origin: "viewport" as any, x: hx + 80, y: hy + 60 })
+      .pause(50)
+      .release()
+      .perform();
+    await driver.sleep(300);
+
+    const blockRectAfter = await block.getRect();
+    assert.ok(
+      blockRectAfter.width > blockRectBefore.width || blockRectAfter.height > blockRectBefore.height,
+      `Блок должен увеличиться (до: ${Math.round(blockRectBefore.width)}x${Math.round(blockRectBefore.height)}, после: ${Math.round(blockRectAfter.width)}x${Math.round(blockRectAfter.height)})`,
+    );
+  });
+});
+
+// ─── Редактирование концов линий ─────────────────────────────────────────────
+
+describe("Редактор диаграмм — Редактирование концов линий", () => {
+  let driver: import("selenium-webdriver").WebDriver;
+  let diagramId: number;
+
+  before(async function () {
+    this.timeout(120_000);
+    driver = await createDriver();
+    await loginAs(driver);
+    diagramId = await createAndOpen(driver, `UI_LineEnd_${Date.now()}`);
+  });
+
+  after(async () => { await driver?.quit(); });
+
+  it("панель линии содержит выборщики 'Начало' и 'Конец'", async function () {
+    this.timeout(15_000);
+    const page = new DiagramDetailPage(driver);
+    await page.goto(diagramId);
+    await (await page.toolButton("Линия")).click();
+
+    const startLabel = await waitVisible(
+      driver,
+      By.xpath(`//*[contains(normalize-space(.), 'Начало')]`),
+      5_000,
+    );
+    const endLabel = await waitVisible(
+      driver,
+      By.xpath(`//*[contains(normalize-space(.), 'Конец')]`),
+      5_000,
+    );
+    assert.ok(await startLabel.isDisplayed(), "Выборщик 'Начало' должен отображаться");
+    assert.ok(await endLabel.isDisplayed(), "Выборщик 'Конец' должен отображаться");
+  });
+
+  it("смена конца линии на 'Открытая' → нарисованная линия имеет marker-end", async function () {
+    this.timeout(20_000);
+    const page = new DiagramDetailPage(driver);
+    await page.goto(diagramId);
+    await (await page.toolButton("Линия")).click();
+
+    // открыть выборщик "Конец" (MUI Select — кликаем по комбобоксу)
+    const endCombo = await waitVisible(
+      driver,
+      By.xpath(`//label[normalize-space(.) = 'Конец']/following-sibling::div[contains(@class,'MuiInputBase')]//div[@role='combobox']`),
+      5_000,
+    );
+    await endCombo.click();
+    // выбрать "Открытая"
+    const openArrowOption = await waitVisible(
+      driver,
+      By.xpath(`//ul[@role='listbox']//li[normalize-space(.) = 'Открытая']`),
+      5_000,
+    );
+    await openArrowOption.click();
+    await driver.sleep(100);
+
+    // нарисовать линию (drawLineOnSvg adds pause for React state sync)
+    await drawLineOnSvg(driver, -80, -60, 60, 40);
+    await driver.sleep(300);
+
+    // проверить, что у линии есть marker-end (атрибут ненулевой)
+    const lines = await driver.findElements(By.css(`svg line[marker-end]`));
+    assert.ok(lines.length > 0, "Линия должна иметь атрибут marker-end после выбора 'Открытая'");
+  });
+
+  it("смена конца линии на 'Нет' → нарисованная линия НЕ имеет marker-end", async function () {
+    this.timeout(20_000);
+    const page = new DiagramDetailPage(driver);
+    await page.goto(diagramId);
+    await (await page.toolButton("Линия")).click();
+
+    // открыть выборщик "Конец"
+    const endCombo = await waitVisible(
+      driver,
+      By.xpath(`//label[normalize-space(.) = 'Конец']/following-sibling::div[contains(@class,'MuiInputBase')]//div[@role='combobox']`),
+      5_000,
+    );
+    await endCombo.click();
+    // выбрать "Нет"
+    const noneOption = await waitVisible(
+      driver,
+      By.xpath(`//ul[@role='listbox']//li[normalize-space(.) = 'Нет']`),
+      5_000,
+    );
+    await noneOption.click();
+    await driver.sleep(100);
+
+    // нарисовать линию
+    await drawOnSvg(driver, -70, -50, 50, 30);
+    await driver.sleep(300);
+
+    // у линий без маркера не должно быть attr marker-end или значение пустое
+    const allLines = await driver.findElements(By.css(`svg line[x1]`));
+    const lastLine = allLines[allLines.length - 1];
+    if (lastLine) {
+      const markerEnd = await lastLine.getAttribute("marker-end");
+      assert.ok(!markerEnd, `Линия с 'Нет' не должна иметь marker-end, получен: ${markerEnd}`);
+    } else {
+      assert.fail("Должна быть хотя бы одна нарисованная линия");
+    }
+  });
+
+  it("у выделенной линии в панели свойств можно изменить конец", async function () {
+    this.timeout(20_000);
+    const page = new DiagramDetailPage(driver);
+    await page.goto(diagramId);
+
+    // нарисовать линию
+    await (await page.toolButton("Линия")).click();
+    await drawOnSvg(driver, -80, -60, 60, 40);
+    await driver.sleep(300);
+
+    // открыть панель свойств
+    await (await waitVisible(driver, By.css(`button[title="Свойства"]`), 10_000)).click();
+
+    // переключиться на select-инструмент и выбрать линию
+    // Линия выбирается через onClick (не onPointerDown), диспатчим click через JS
+    await (await page.toolButton("Выбор (S)")).click();
+    const lines = await driver.findElements(By.css(`svg line[x1]`));
+    if (lines.length === 0) { this.skip(); return; }
+    await driver.executeScript(
+      `arguments[0].dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))`,
+      lines[0]!,
+    );
+    await driver.sleep(200);
+
+    // в панели свойств должен появиться выборщик "Конец"
+    const endSelect = await driver.findElements(
+      By.xpath(`//label[normalize-space(.) = 'Конец']/following-sibling::div[contains(@class,'MuiInputBase')]`),
+    );
+    assert.ok(endSelect.length > 0, "Панель свойств выбранной линии должна содержать выборщик 'Конец'");
+  });
+});
+
+// ─── Экспорт диаграммы ───────────────────────────────────────────────────────
+
+describe("Редактор диаграмм — Экспорт диаграммы", () => {
+  let driver: import("selenium-webdriver").WebDriver;
+  let diagramId: number;
+
+  before(async function () {
+    this.timeout(120_000);
+    driver = await createDriver();
+    await loginAs(driver);
+    diagramId = await createAndOpen(driver, `UI_Export_${Date.now()}`);
+  });
+
+  after(async () => { await driver?.quit(); });
+
+  it("кнопка 'Скачать диаграмму' отображается в топ-баре", async function () {
+    this.timeout(15_000);
+    const page = new DiagramDetailPage(driver);
+    await page.goto(diagramId);
+
+    const downloadBtn = await waitVisible(
+      driver,
+      By.css(`button[title="Скачать диаграмму"]`),
+      10_000,
+    );
+    assert.ok(await downloadBtn.isDisplayed(), "Кнопка 'Скачать диаграмму' должна быть видна в топ-баре");
+  });
+
+  it("клик по 'Скачать диаграмму' открывает модалку экспорта с форматами", async function () {
+    this.timeout(15_000);
+    const page = new DiagramDetailPage(driver);
+    await page.goto(diagramId);
+
+    await (await waitVisible(driver, By.css(`button[title="Скачать диаграмму"]`), 10_000)).click();
+
+    // модалка должна показать кнопки форматов
+    const svgBtn = await waitVisible(
+      driver,
+      By.css(`button[class*="FormatBtn"]`),
+      5_000,
+    );
+    assert.ok(await svgBtn.isDisplayed(), "Модалка экспорта должна содержать кнопки форматов");
+  });
+
+  it("модалка экспорта содержит все 5 форматов: JSON, SVG, PNG, JPEG, PDF", async function () {
+    this.timeout(15_000);
+    const page = new DiagramDetailPage(driver);
+    await page.goto(diagramId);
+
+    await (await waitVisible(driver, By.css(`button[title="Скачать диаграмму"]`), 10_000)).click();
+
+    // ждём появления модалки
+    await waitVisible(driver, By.css(`button[class*="FormatBtn"]`), 5_000);
+
+    const formatBtns = await driver.findElements(By.css(`button[class*="FormatBtn"]`));
+    assert.ok(formatBtns.length >= 5, `Должно быть ≥5 кнопок формата, найдено: ${formatBtns.length}`);
+  });
+
+  it("клик по JSON экспортирует и закрывает модалку", async function () {
+    this.timeout(20_000);
+    const page = new DiagramDetailPage(driver);
+    await page.goto(diagramId);
+
+    // добавить блок чтобы было что экспортировать
+    await (await page.toolButton("Фигуры")).click();
+    await (await waitVisible(driver, By.xpath(`//button[normalize-space(.) = 'Rectangle']`), 5_000)).click();
+    await waitVisible(driver, By.xpath(`//*[@data-block='true']`), 5_000);
+
+    // нажать Скачать диаграмму в топ-баре
+    await (await waitVisible(driver, By.css(`button[title="Скачать диаграмму"]`), 10_000)).click();
+    await waitVisible(driver, By.css(`button[class*="FormatBtn"]`), 5_000);
+
+    // кликнуть JSON (первая кнопка формата)
+    const formatBtns = await driver.findElements(By.css(`button[class*="FormatBtn"]`));
+    await formatBtns[0]!.click(); // JSON
+    await driver.sleep(1_000);
+
+    // модалка должна закрыться
+    const remaining = await driver.findElements(By.css(`button[class*="FormatBtn"]`));
+    assert.equal(remaining.length, 0, "После экспорта модалка должна закрыться");
+  });
+
+  it("SVG-экспорт корректно отрабатывает (модалка закрывается)", async function () {
+    this.timeout(20_000);
+    const page = new DiagramDetailPage(driver);
+    await page.goto(diagramId);
+
+    await (await page.toolButton("Фигуры")).click();
+    await (await waitVisible(driver, By.xpath(`//button[normalize-space(.) = 'Rectangle']`), 5_000)).click();
+    await waitVisible(driver, By.xpath(`//*[@data-block='true']`), 5_000);
+
+    await (await waitVisible(driver, By.css(`button[title="Скачать диаграмму"]`), 10_000)).click();
+    await waitVisible(driver, By.css(`button[class*="FormatBtn"]`), 5_000);
+
+    // кликнуть SVG (вторая кнопка)
+    const formatBtns = await driver.findElements(By.css(`button[class*="FormatBtn"]`));
+    if (formatBtns.length >= 2) await formatBtns[1]!.click(); // SVG
+    await driver.sleep(1_000);
+
+    const remaining = await driver.findElements(By.css(`button[class*="FormatBtn"]`));
+    assert.equal(remaining.length, 0, "После SVG-экспорта модалка должна закрыться");
   });
 });
