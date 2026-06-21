@@ -1,5 +1,6 @@
 package com.example.backend.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -24,6 +25,7 @@ public class User implements UserDetails {
     @Column(unique = true, nullable = false)
     private String email;
 
+    @JsonIgnore
     @Column(nullable = false)
     private String password;
 
@@ -39,14 +41,15 @@ public class User implements UserDetails {
     @Column(name = "is_active")
     private Boolean isActive = true;
 
-
+    @JsonIgnore
     @OneToMany(mappedBy = "owner", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private List<Diagram> ownedDiagrams = new ArrayList<>();
 
+    @JsonIgnore
     @ManyToMany(mappedBy = "participants", fetch = FetchType.LAZY)
     private List<Diagram> participatedDiagrams = new ArrayList<>();
 
-
+    @JsonIgnore
     @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private List<DiagramParticipant> diagramRoles = new ArrayList<>();
 
@@ -58,7 +61,6 @@ public class User implements UserDetails {
         this.password = password;
     }
 
-    // Геттеры и сеттеры
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
     public String getUsername() { return username; }

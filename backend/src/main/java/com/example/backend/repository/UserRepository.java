@@ -23,4 +23,16 @@ public interface UserRepository extends JpaRepository<User, Long> {
             "     OR LOWER(u.fullName) LIKE LOWER(CONCAT('%', :query, '%'))) " +
             "ORDER BY u.username")
     List<User> searchUsers(@Param("query") String query, @Param("currentUserId") Long currentUserId);
+
+    @Query("SELECT u FROM User u WHERE u.isActive = true " +
+            "AND u.id != :currentUserId " +
+            "AND NOT EXISTS (SELECT d FROM Diagram d WHERE d.id = :diagramId AND d.owner = u) " +
+            "AND u.id NOT IN (SELECT dp.user.id FROM DiagramParticipant dp WHERE dp.diagram.id = :diagramId) " +
+            "AND (LOWER(u.username) LIKE LOWER(CONCAT('%', :query, '%')) " +
+            "     OR LOWER(u.email) LIKE LOWER(CONCAT('%', :query, '%')) " +
+            "     OR LOWER(u.fullName) LIKE LOWER(CONCAT('%', :query, '%'))) " +
+            "ORDER BY u.username")
+    List<User> searchUsersForDiagram(@Param("query") String query,
+                                     @Param("currentUserId") Long currentUserId,
+                                     @Param("diagramId") Long diagramId);
 }
