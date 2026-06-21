@@ -347,10 +347,14 @@ function buildPreviewSvg(elements: DiagramElement[]): string {
     const minX = Math.min(...xs) - pad, minY = Math.min(...ys) - pad;
     const w = Math.max(Math.max(...xs) + pad - minX, 1);
     const h = Math.max(Math.max(...ys) + pad - minY, 1);
+    const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     const renderBlock = (b: DiagramCanvasBlock): string => {
         const { x, y, width: bw, height: bh } = b;
         const fill = '#eff6ff', stroke = '#3b82f6', sw = '1.5';
         const cx = x + bw / 2, cy = y + bh / 2;
+        if (b.type === 'text') return `<text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="middle" font-size="${b.fontSize ?? 14}" fill="#1a56db">${esc(b.title)}</text>`;
+        if (b.type === 'image') return b.src ? `<image href="${b.src}" x="${x}" y="${y}" width="${bw}" height="${bh}" preserveAspectRatio="xMidYMid meet"/>` : `<rect x="${x}" y="${y}" width="${bw}" height="${bh}" fill="#f1f5f9" stroke="#94a3b8" stroke-width="${sw}" rx="4"/>`;
+
         if (b.type === 'circle' || b.type === 'er-attribute') return `<ellipse cx="${cx}" cy="${cy}" rx="${bw / 2}" ry="${bh / 2}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>`;
         if (b.type === 'bpmn-event') return `<circle cx="${cx}" cy="${cy}" r="${Math.min(bw, bh) / 2 - 1}" fill="${fill}" stroke="#22c55e" stroke-width="${sw}"/>`;
         if (b.type === 'bpmn-end') return `<circle cx="${cx}" cy="${cy}" r="${Math.min(bw, bh) / 2 - 1}" fill="${fill}" stroke="#ef4444" stroke-width="3"/>`;
