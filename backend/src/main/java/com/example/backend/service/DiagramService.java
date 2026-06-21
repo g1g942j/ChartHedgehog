@@ -186,7 +186,11 @@ public class DiagramService {
     @Transactional(readOnly = true)
     public List<DiagramParticipantDto> getParticipantDtos(Long diagramId, Long requesterId) {
         Diagram diagram = findById(diagramId);
-        if (getUserRoleInDiagram(diagram, requesterId) == null) {
+        if (requesterId == null) {
+            if (!Boolean.TRUE.equals(diagram.getIsPublic())) {
+                throw new RuntimeException("Access denied");
+            }
+        } else if (getUserRoleInDiagram(diagram, requesterId) == null) {
             throw new RuntimeException("Access denied");
         }
         List<DiagramParticipantDto> result = new ArrayList<>();

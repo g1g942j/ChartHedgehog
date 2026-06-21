@@ -1173,13 +1173,13 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                     <ArrowBackOutlinedIcon fontSize="small" />
                 </button>
                 <span className={styles.DiagramName}>{renaming !== diagramName ? renaming : diagramName}</span>
-                {canEdit && saveStatus !== 'idle' ? (
-                    <span className={`${styles.SaveStatus} ${styles[`SaveStatus_${saveStatus}`]}`}>
-                        {saveStatus === 'saving' ? 'Сохранение…' : saveStatus === 'saved' ? '✓ Сохранено' : 'Ошибка сохранения'}
-                    </span>
-                ) : null}
                 <div className={styles.TopBarRight}>
-                    <CollaborationAvatars users={remoteUsers} connected={connected} />
+                    {canEdit && saveStatus !== 'idle' ? (
+                        <span className={`${styles.SaveStatus} ${styles[`SaveStatus_${saveStatus}`]}`}>
+                            {saveStatus === 'saving' ? 'Сохранение…' : saveStatus === 'saved' ? '✓ Сохранено' : 'Ошибка сохранения'}
+                        </span>
+                    ) : null}
+                    <CollaborationAvatars users={remoteUsers} />
                     {canEdit ? (
                         <>
                             <button type="button" className={styles.TopBarBtn} title="Отменить (Ctrl+Z)" onClick={undo}><UndoOutlinedIcon fontSize="small" /></button>
@@ -1221,18 +1221,24 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                                     {t.diagrams.saveSettings}
                                 </Button>
                             </div>
-                        ) : null}
-                        <div className={styles.SettingsRow}>
-                            <Typography variant="caption" style={{ fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-secondary, #888)' }}>Доступ</Typography>
-                            <label className={styles.PublicToggle}>
-                                <span>Публичный просмотр</span>
-                                <button type="button" role="switch" aria-checked={isPublic} className={`${styles.ToggleSwitch} ${isPublic ? styles.ToggleSwitch_on : ''}`} onClick={() => void handleTogglePublic()} disabled={currentUserRole !== 'OWNER'} />
-                            </label>
-                            <div className={styles.ShareLinkRow}>
-                                <span className={styles.ShareLinkText} title={shareUrl}>{shareUrl}</span>
-                                <button type="button" className={styles.CopyBtn} onClick={copyLink}>{linkCopied ? '✓' : 'Копировать'}</button>
+                        ) : (
+                            <div className={styles.SettingsRow}>
+                                <Typography variant="body2" style={{ fontWeight: 600 }}>{diagramName}</Typography>
                             </div>
-                        </div>
+                        )}
+                        {currentUserRole === 'OWNER' ? (
+                            <div className={styles.SettingsRow}>
+                                <Typography variant="caption" style={{ fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-secondary, #888)' }}>Доступ</Typography>
+                                <label className={styles.PublicToggle}>
+                                    <span>Публичный просмотр</span>
+                                    <button type="button" role="switch" aria-checked={isPublic} className={`${styles.ToggleSwitch} ${isPublic ? styles.ToggleSwitch_on : ''}`} onClick={() => void handleTogglePublic()} />
+                                </label>
+                                <div className={styles.ShareLinkRow}>
+                                    <span className={styles.ShareLinkText} title={shareUrl}>{shareUrl}</span>
+                                    <button type="button" className={styles.CopyBtn} onClick={copyLink}>{linkCopied ? '✓' : 'Копировать'}</button>
+                                </div>
+                            </div>
+                        ) : null}
                         <Button variant="outlined" size="small" component={Link} href={`/diagrams/${diagramId}/participants`} style={{ justifyContent: 'flex-start', gap: 8 }} onClick={() => setMenuOpen(false)}>
                             <GroupsOutlinedIcon fontSize="small" />{t.common.participants}
                         </Button>
@@ -1258,15 +1264,15 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                 <>
                     <div className={styles.ModalOverlay} onClick={() => !isExporting && setExportOpen(false)} />
                     <div className={styles.Modal} role="dialog" aria-modal="true">
-                        <Typography variant="subtitle1" style={{ marginBottom: 4 }}>Скачать диаграмму</Typography>
+                        <Typography variant="h6" style={{ marginBottom: 4 }}>Скачать диаграмму</Typography>
                         <Typography variant="body2" color="text.secondary" style={{ marginBottom: 16 }}>Выберите формат файла</Typography>
                         <label className={styles.TransparentToggle}>
                             <input type="checkbox" checked={transparentBg} onChange={(e) => setTransparentBg(e.target.checked)} />
-                            Прозрачный фон <span className={styles.TransparentNote}>(PNG, SVG)</span>
+                            Прозрачный фон
                         </label>
                         <div className={styles.FormatGrid}>
                             {(['json', 'svg', 'png', 'jpeg', 'pdf'] as ExportFormat[]).map((fmt) => (
-                                <button key={fmt} type="button" className={styles.FormatBtn} disabled={isExporting} onClick={() => void handleExport(fmt)}>
+                                <button key={fmt} type="button" className={styles.FormatBtn} disabled={isExporting || (transparentBg && fmt !== 'png' && fmt !== 'svg')} onClick={() => void handleExport(fmt)}>
                                     <span className={styles.FormatExt}>{fmt.toUpperCase()}</span>
                                     <span className={styles.FormatDesc}>{fmt === 'json' ? 'Данные' : fmt === 'svg' ? 'Вектор SVG' : fmt === 'png' ? 'PNG' : fmt === 'jpeg' ? 'JPEG' : 'PDF'}</span>
                                 </button>
