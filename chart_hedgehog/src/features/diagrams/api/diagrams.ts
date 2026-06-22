@@ -1,5 +1,7 @@
 import { apiFetch } from '@/shared/api/client';
 
+import type { DiagramDetail } from './diagramDetail';
+
 export type DiagramSummary = {
     id: number;
     name: string;
@@ -24,13 +26,14 @@ export async function createDiagram(name: string): Promise<DiagramSummary> {
     });
 }
 
+// Backend PUT /api/diagrams/{id} returns DiagramDetailDto (not a summary).
 export async function updateDiagramName(
     id: number,
     name: string,
-): Promise<DiagramSummary> {
+): Promise<DiagramDetail> {
     const trimmed = name.trim();
     if (!trimmed) throw new Error('Введите название диаграммы');
-    return apiFetch<DiagramSummary>(`/api/diagrams/${id}`, {
+    return apiFetch<DiagramDetail>(`/api/diagrams/${id}`, {
         method: 'PUT',
         body: JSON.stringify({ name: trimmed }),
     });

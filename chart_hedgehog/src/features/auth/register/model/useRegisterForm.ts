@@ -47,10 +47,18 @@ export function useRegisterForm() {
             methods.reset();
             setTimeout(() => router.push('/'), 1500);
         } catch (error) {
-            const message =
+            let message =
                 error instanceof Error
                     ? error.message
                     : t.auth.registerFallbackError;
+            // Map raw DB/server errors to user-friendly messages
+            if (/email/i.test(message) && /constraint|duplicate|exist|уже/i.test(message)) {
+                message = t.auth.emailAlreadyExists;
+            } else if (/username/i.test(message) && /constraint|duplicate|exist|уже/i.test(message)) {
+                message = t.auth.usernameAlreadyTaken;
+            } else if (/SQL|constraint|nested exception|could not execute|statement/i.test(message)) {
+                message = t.auth.registerFallbackError;
+            }
             setSubmitError(message);
         } finally {
             setIsPending(false);

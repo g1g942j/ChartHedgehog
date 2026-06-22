@@ -92,7 +92,8 @@ function EraserIcon() {
 // ─── types ────────────────────────────────────────────────────────────────────
 
 type DrawingTool = 'select' | 'pan' | 'eraser' | 'pencil' | 'line';
-type LeftPanel = 'none' | 'shapes' | 'uml' | 'bpmn' | 'er' | 'mockup' | 'flowchart' | 'line-config' | 'templates' | 'text-panel';
+type LeftPanel = 'none' | 'shapes' | 'uml' | 'bpmn' | 'er' | 'mockup' | 'flowchart' | 'line-config' | 'templates';
+type BlockGroup = { id: string; blockIds: string[] };
 type EditingBlock = { id: string; title: string; body: string };
 type ExportFormat = 'json' | 'svg' | 'png' | 'jpeg' | 'pdf';
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
@@ -279,6 +280,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
     const [shapeSearch, setShapeSearch] = useState('');
     const [pendingPlacement, setPendingPlacement] = useState<DiagramElement[] | null>(null);
     const [pendingCursorPos, setPendingCursorPos] = useState<{ x: number; y: number }>({ x: 100, y: 100 });
+    const [groups, setGroups] = useState<BlockGroup[]>([]);
 
     // ── settings form ─────────────────────────────────────────────────────────
     const [renaming, setRenaming] = useState(diagramName);
@@ -453,9 +455,31 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
         });
     }, [canEdit, selectedIds, pushHistory]);
 
+    // ── grouping ──────────────────────────────────────────────────────────────
+    const groupSelected = useCallback(() => {
+        if (!canEdit || selectedIds.size < 2) return;
+        const existingGroupIds = new Set(groups.flatMap((g) => g.blockIds));
+        const newIds = [...selectedIds].filter((id) => !existingGroupIds.has(id));
+        if (newIds.length < 2) return;
+        setGroups((cur) => [...cur, { id: generateId('group'), blockIds: newIds }]);
+    }, [canEdit, selectedIds, groups]);
+
+    const ungroupSelected = useCallback(() => {
+        if (!canEdit || selectedIds.size === 0) return;
+        setGroups((cur) => cur.filter((g) => !g.blockIds.some((id) => selectedIds.has(id))));
+    }, [canEdit, selectedIds]);
+
+    useEffect(() => {
+        const existingIds = new Set(elements.filter(isBlock).map((b) => b.id));
+        setGroups((cur) => {
+            const next = cur.map((g) => ({ ...g, blockIds: g.blockIds.filter((id) => existingIds.has(id)) })).filter((g) => g.blockIds.length >= 2);
+            return next.length === cur.length && next.every((g, i) => g.blockIds.length === cur[i].blockIds.length) ? cur : next;
+        });
+    }, [elements]);
+
     // ── keyboard shortcuts ────────────────────────────────────────────────────
-    const keyActionsRef = useRef({ undo, redo, copySelected, paste, deleteSelected });
-    useEffect(() => { keyActionsRef.current = { undo, redo, copySelected, paste, deleteSelected }; });
+    const keyActionsRef = useRef({ undo, redo, copySelected, paste, deleteSelected, groupSelected, ungroupSelected });
+    useEffect(() => { keyActionsRef.current = { undo, redo, copySelected, paste, deleteSelected, groupSelected, ungroupSelected }; });
 
     useEffect(() => {
         const onKey = (e: KeyboardEvent) => {
@@ -464,10 +488,14 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
             const a = keyActionsRef.current;
             if (e.ctrlKey && !e.shiftKey && e.key === 'z') { e.preventDefault(); a.undo(); }
             else if (e.ctrlKey && (e.key === 'y' || (e.shiftKey && e.key === 'Z'))) { e.preventDefault(); a.redo(); }
+            else if (e.ctrlKey && e.shiftKey && (e.key === 'g' || e.key === 'G')) { e.preventDefault(); a.ungroupSelected(); }
+            else if (e.ctrlKey && !e.shiftKey && e.key === 'g') { e.preventDefault(); a.groupSelected(); }
             else if (e.ctrlKey && e.key === 'c') { a.copySelected(); }
             else if (e.ctrlKey && e.key === 'v') { e.preventDefault(); a.paste(); }
             else if ((e.key === 'Delete' || e.key === 'Backspace') && !e.ctrlKey) { e.preventDefault(); a.deleteSelected(); }
             else if (e.key === 'Escape') { setPendingPlacement(null); setSelectedIds(new Set()); setSelectedLineId(null); setEditing(null); }
+            else if (!e.ctrlKey && !e.shiftKey && !e.altKey && e.key === 's') { setTool('select'); }
+            else if (!e.ctrlKey && !e.shiftKey && !e.altKey && e.key === 'h') { setTool('pan'); }
         };
         document.addEventListener('keydown', onKey);
         return () => document.removeEventListener('keydown', onKey);
@@ -654,7 +682,11 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
         }
 
         if (tool === 'select') {
-            setSelectedIds(new Set()); setSelectedLineId(null); setEditing(null);
+            // Flush any active block edit (saving its latest title/body) instead of
+            // discarding it via setEditing(null). commitEdit() reads editingRef.current,
+            // persists the changes, then clears editing — so clicking the canvas saves.
+            commitEdit();
+            setSelectedIds(new Set()); setSelectedLineId(null);
             const pt = getCanvasPoint(e.clientX, e.clientY);
             selBoxStartRef.current = pt;
             setSelBox({ x1: pt.x, y1: pt.y, x2: pt.x, y2: pt.y });
@@ -786,7 +818,16 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
     const addBlock = (tpl: DiagramBlockTemplate) => {
         pushHistory();
         const id = generateId(tpl.type);
-        setElements((cur) => [...cur, createBlock(tpl, id, 100 + cur.filter(isBlock).length * 20, 100)]);
+        const c = viewportCenter();
+        const block = createBlock(tpl, id, Math.round(c.x - tpl.width / 2), Math.round(c.y - tpl.height / 2));
+        setElements((cur) => [...cur, block]);
+        setTool('select');
+        // Text/comment blocks start empty (invisible) — open the editor immediately
+        // so the user can type, otherwise it looks like nothing happened.
+        if (tpl.type === 'text' || tpl.type === 'comment') {
+            setSelectedIds(new Set([id]));
+            setEditing({ id, title: block.title, body: block.body });
+        }
     };
 
     // Normalise imported/preset elements to origin (0,0) so they can follow the cursor
@@ -856,7 +897,17 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
         if (!canEdit || editing?.id === block.id) return;
         if (tool === 'line') return; // handled via anchor dots
 
-        const moveIds: Set<string> = selectedIds.has(block.id) ? new Set(selectedIds) : new Set([block.id]);
+        // Flush any edit on a different block before selecting/moving this one
+        // (blur may not fire when the new target isn't focusable).
+        commitEdit();
+
+        const group = groups.find((g) => g.blockIds.includes(block.id));
+        const groupIds = group ? new Set(group.blockIds) : null;
+        const moveIds: Set<string> = selectedIds.has(block.id)
+            ? new Set(selectedIds)
+            : groupIds && !e.shiftKey
+                ? groupIds
+                : new Set([block.id]);
         if (e.shiftKey) {
             setSelectedIds((prev) => { const n = new Set(prev); if (n.has(block.id)) { n.delete(block.id); } else { n.add(block.id); } return n; });
             return;
@@ -1092,11 +1143,11 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
     ], [t]);
     const isDrawing = tool === 'line' || tool === 'pencil';
 
-    const filteredShapes = useMemo(() => { const q = shapeSearch.toLowerCase(); return q ? SHAPE_BLOCK_TEMPLATES.filter((t) => t.name.toLowerCase().includes(q)) : SHAPE_BLOCK_TEMPLATES; }, [shapeSearch]);
-    const filteredUml = useMemo(() => { const q = shapeSearch.toLowerCase(); return q ? UML_BLOCK_TEMPLATES.filter((t) => t.name.toLowerCase().includes(q)) : UML_BLOCK_TEMPLATES; }, [shapeSearch]);
-    const filteredBpmn = useMemo(() => { const q = shapeSearch.toLowerCase(); return q ? BPMN_BLOCK_TEMPLATES.filter((t) => t.name.toLowerCase().includes(q)) : BPMN_BLOCK_TEMPLATES; }, [shapeSearch]);
-    const filteredEr = useMemo(() => { const q = shapeSearch.toLowerCase(); return q ? ER_BLOCK_TEMPLATES.filter((t) => t.name.toLowerCase().includes(q)) : ER_BLOCK_TEMPLATES; }, [shapeSearch]);
-    const filteredMockup = useMemo(() => { const q = shapeSearch.toLowerCase(); return q ? MOCKUP_BLOCK_TEMPLATES.filter((t) => t.name.toLowerCase().includes(q)) : MOCKUP_BLOCK_TEMPLATES; }, [shapeSearch]);
+    const filteredShapes = useMemo(() => { const q = shapeSearch.toLowerCase(); return q ? SHAPE_BLOCK_TEMPLATES.filter((t) => t.name.toLowerCase().includes(q) || (t.nameRu ?? '').toLowerCase().includes(q)) : SHAPE_BLOCK_TEMPLATES; }, [shapeSearch]);
+    const filteredUml = useMemo(() => { const q = shapeSearch.toLowerCase(); return q ? UML_BLOCK_TEMPLATES.filter((t) => t.name.toLowerCase().includes(q) || (t.nameRu ?? '').toLowerCase().includes(q)) : UML_BLOCK_TEMPLATES; }, [shapeSearch]);
+    const filteredBpmn = useMemo(() => { const q = shapeSearch.toLowerCase(); return q ? BPMN_BLOCK_TEMPLATES.filter((t) => t.name.toLowerCase().includes(q) || (t.nameRu ?? '').toLowerCase().includes(q)) : BPMN_BLOCK_TEMPLATES; }, [shapeSearch]);
+    const filteredEr = useMemo(() => { const q = shapeSearch.toLowerCase(); return q ? ER_BLOCK_TEMPLATES.filter((t) => t.name.toLowerCase().includes(q) || (t.nameRu ?? '').toLowerCase().includes(q)) : ER_BLOCK_TEMPLATES; }, [shapeSearch]);
+    const filteredMockup = useMemo(() => { const q = shapeSearch.toLowerCase(); return q ? MOCKUP_BLOCK_TEMPLATES.filter((t) => t.name.toLowerCase().includes(q) || (t.nameRu ?? '').toLowerCase().includes(q)) : MOCKUP_BLOCK_TEMPLATES; }, [shapeSearch]);
 
     const viewportCenter = () => {
         const rect = canvasRef.current?.getBoundingClientRect();
@@ -1279,15 +1330,19 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                                     <span>{t.editor.settingsPublicView}</span>
                                     <button type="button" role="switch" aria-checked={isPublic} className={`${styles.ToggleSwitch} ${isPublic ? styles.ToggleSwitch_on : ''}`} onClick={() => void handleTogglePublic()} />
                                 </label>
-                                <div className={styles.ShareLinkRow}>
-                                    <span className={styles.ShareLinkText} title={shareUrl}>{shareUrl}</span>
-                                    <button type="button" className={styles.CopyBtn} onClick={copyLink}>{linkCopied ? '✓' : 'Копировать'}</button>
-                                </div>
                             </div>
                         ) : null}
-                        <Button variant="outlined" size="small" component={Link} href={`/diagrams/${diagramId}/participants`} style={{ justifyContent: 'flex-start', gap: 8 }} onClick={() => setMenuOpen(false)}>
-                            <GroupsOutlinedIcon fontSize="small" />{t.common.participants}
-                        </Button>
+                        {(isPublic || currentUserRole === 'OWNER') ? (
+                            <div className={styles.ShareLinkRow}>
+                                <span className={styles.ShareLinkText} title={shareUrl}>{shareUrl}</span>
+                                <button type="button" className={styles.CopyBtn} onClick={copyLink}>{linkCopied ? '✓' : 'Копировать'}</button>
+                            </div>
+                        ) : null}
+                        {sessionUser ? (
+                            <Button variant="outlined" size="small" component={Link} href={`/diagrams/${diagramId}/participants`} style={{ justifyContent: 'flex-start', gap: 8 }} onClick={() => setMenuOpen(false)}>
+                                <GroupsOutlinedIcon fontSize="small" />{t.common.participants}
+                            </Button>
+                        ) : null}
                         {canDelete ? (
                             <Button variant="outlined" color="error" size="small" loading={isDeleting} disabled={isRenaming} style={{ justifyContent: 'flex-start', gap: 8 }} onClick={() => setDeleteConfirmOpen(true)}>
                                 <DeleteOutlineOutlinedIcon fontSize="small" />{t.diagrams.deleteDiagram}
@@ -1320,7 +1375,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                             {(['json', 'svg', 'png', 'jpeg', 'pdf'] as ExportFormat[]).map((fmt) => (
                                 <button key={fmt} type="button" className={styles.FormatBtn} disabled={isExporting || (transparentBg && fmt !== 'png' && fmt !== 'svg')} onClick={() => void handleExport(fmt)}>
                                     <span className={styles.FormatExt}>{fmt.toUpperCase()}</span>
-                                    <span className={styles.FormatDesc}>{fmt === 'json' ? 'Данные' : fmt === 'svg' ? 'Вектор SVG' : fmt === 'png' ? 'PNG' : fmt === 'jpeg' ? 'JPEG' : 'PDF'}</span>
+                                    <span className={styles.FormatDesc}>{fmt === 'json' ? t.editor.exportFormatJson : fmt === 'svg' ? t.editor.exportFormatSvg : fmt === 'png' ? 'PNG' : fmt === 'jpeg' ? 'JPEG' : 'PDF'}</span>
                                 </button>
                             ))}
                         </div>
@@ -1355,7 +1410,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                             <button type="button" title={t.editor.toolShapes} className={`${styles.ToolBtn} ${leftPanel === 'shapes' ? styles.ToolBtn_panel : ''}`} onClick={() => togglePanel('shapes')}>
                                 <CategoryOutlinedIcon fontSize="small" />
                             </button>
-                            <button type="button" title={t.editor.toolText} className={`${styles.ToolBtn} ${leftPanel === 'text-panel' ? styles.ToolBtn_panel : ''}`} onClick={() => togglePanel('text-panel')}>
+                            <button type="button" title={t.editor.toolText} className={styles.ToolBtn} onClick={() => { const tpl = TEXT_BLOCK_TEMPLATES.find((tpl) => tpl.type === 'text'); if (tpl) addBlock(tpl); }}>
                                 <TextFieldsOutlinedIcon fontSize="small" />
                             </button>
                             <button type="button" title={t.editor.toolTemplates} className={`${styles.ToolBtn} ${['templates','uml','bpmn','er','mockup','flowchart'].includes(leftPanel) ? styles.ToolBtn_panel : ''}`} onClick={() => togglePanel('templates')}>
@@ -1382,14 +1437,6 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                             <button key={tpl.type} type="button" className={`${styles.PaletteItem} ${styles[`PaletteItem_${tpl.type}`]}`} draggable onClick={() => addBlock(tpl)} onDragStart={(e) => onDragStart(e, tpl.type)}>{locale === 'ru' && tpl.nameRu ? tpl.nameRu : tpl.name}</button>
                         ))}
                         {filteredShapes.length === 0 ? <Typography variant="body2" color="text.secondary">{t.editor.panelNotFound}</Typography> : null}
-                    </div>
-                ) : leftPanel === 'text-panel' ? (
-                    <div className={styles.LeftPanel}>
-                        <Typography variant="subtitle2" className={styles.PanelTitle}>{t.editor.panelTextBlocks}</Typography>
-                        {TEXT_BLOCK_TEMPLATES.filter((tpl) => tpl.type !== 'comment').map((tpl) => (
-                            <button key={tpl.type} type="button" className={`${styles.PaletteItem} ${styles[`PaletteItem_${tpl.type}`]}`} draggable onClick={() => addBlock(tpl)} onDragStart={(e) => onDragStart(e, tpl.type)}>{locale === 'ru' && tpl.nameRu ? tpl.nameRu : tpl.name}</button>
-                        ))}
-                        <Typography variant="caption" color="text.secondary" style={{ marginTop: 4 }}>{t.editor.panelDblClick}</Typography>
                     </div>
                 ) : leftPanel === 'templates' ? (
                     <div className={styles.LeftPanel}>
@@ -1544,6 +1591,33 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                                 />
                             ) : null}
                         </svg>
+
+                        {groups.map((g) => {
+                            const members = elements.filter(isBlock).filter((b) => g.blockIds.includes(b.id));
+                            if (members.length < 2) return null;
+                            const minX = Math.min(...members.map((b) => b.x));
+                            const minY = Math.min(...members.map((b) => b.y));
+                            const maxX = Math.max(...members.map((b) => b.x + b.width));
+                            const maxY = Math.max(...members.map((b) => b.y + b.height));
+                            const PAD = 8;
+                            const isGroupSelected = members.some((b) => selectedIds.has(b.id));
+                            return (
+                                <div
+                                    key={g.id}
+                                    style={{
+                                        position: 'absolute',
+                                        left: minX - PAD,
+                                        top: minY - PAD,
+                                        width: maxX - minX + PAD * 2,
+                                        height: maxY - minY + PAD * 2,
+                                        border: `1.5px dashed ${isGroupSelected ? 'var(--primary, #1a56db)' : 'var(--border, #c0cfe0)'}`,
+                                        borderRadius: 6,
+                                        pointerEvents: 'none',
+                                        opacity: 0.7,
+                                    }}
+                                />
+                            );
+                        })}
 
                         {elements.filter(isBlock).map((block) => {
                             const isEditing = editing?.id === block.id;

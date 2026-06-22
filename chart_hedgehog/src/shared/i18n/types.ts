@@ -39,6 +39,8 @@ export type AppTranslations = {
         loginAction: string;
         loginFallbackError: string;
         registerFallbackError: string;
+        emailAlreadyExists: string;
+        usernameAlreadyTaken: string;
         redirectToLogin: string;
         forgotPassword: string;
         validation: {
@@ -210,6 +212,8 @@ export type AppTranslations = {
         exportTitle: string;
         exportSubtitle: string;
         exportTransparentBg: string;
+        exportFormatJson: string;
+        exportFormatSvg: string;
         // settings panel
         settingsAccess: string;
         settingsPublicView: string;
