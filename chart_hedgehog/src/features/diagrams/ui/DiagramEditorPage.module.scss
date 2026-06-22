@@ -893,11 +893,11 @@
 .AnchorDot {
     position: absolute;
     z-index: 10;
-    width: 10px;
-    height: 10px;
+    width: 8px;
+    height: 8px;
     cursor: crosshair;
-    background: var(--primary, #1a56db);
-    border: 2px solid #fff;
+    background: var(--surface);
+    border: 1.5px solid var(--primary);
     border-radius: 50%;
     transform: translate(-50%, -50%);
     transition: transform 0.1s, background 0.1s;
@@ -934,9 +934,11 @@
     display: flex;
     flex-direction: column;
     gap: 10px;
+    box-sizing: border-box;
     width: 200px;
     min-width: 200px;
     padding: 12px;
+    overflow-x: hidden;
     overflow-y: auto;
     background: var(--surface);
     border-left: 1px solid var(--border);
@@ -946,6 +948,13 @@
     display: flex;
     gap: 8px;
     align-items: center;
+    min-width: 0;
+
+    // Range sliders default to min-width:auto inside flex and won't shrink,
+    // forcing a horizontal scrollbar — let them shrink to the row width.
+    input[type='range'] {
+        min-width: 0;
+    }
 }
 
 .PropLabel {

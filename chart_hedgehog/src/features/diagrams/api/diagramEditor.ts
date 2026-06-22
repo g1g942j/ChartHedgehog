@@ -88,6 +88,8 @@ export type DiagramCanvasBlock = {
     fontWeight?: 'normal' | 'bold';
     fontStyle?: 'normal' | 'italic';
     textColor?: string;
+    /** угол поворота в градусах (вокруг центра блока) */
+    rotation?: number;
     /** data URL для блоков типа 'image' */
     src?: string;
 };
@@ -108,6 +110,8 @@ export type DiagramLineElement = {
     toAnchor?: AnchorSide;
     strokeColor?: string;
     strokeWidth?: number;
+    /** угол поворота в градусах (вокруг середины линии) */
+    rotation?: number;
 };
 
 export type DiagramPencilElement = {

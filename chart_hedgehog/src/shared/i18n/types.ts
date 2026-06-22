@@ -205,6 +205,7 @@ export type AppTranslations = {
         propsFontSize: string;
         propsTextColor: string;
         propsStyle: string;
+        propsRotation: string;
         propsLineColor: string;
         propsLineWidth: string;
         propsNoSelection: string;

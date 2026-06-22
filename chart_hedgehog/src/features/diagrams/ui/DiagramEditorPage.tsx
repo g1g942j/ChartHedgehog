@@ -267,6 +267,9 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
 
     // ── anchor hover ──────────────────────────────────────────────────────────
     const [anchorHover, setAnchorHover] = useState<{ blockId: string; side: AnchorSide } | null>(null);
+    // true while dragging a line endpoint — reveals block anchor dots so the user
+    // sees where the line can snap/attach.
+    const [draggingLineEnd, setDraggingLineEnd] = useState(false);
 
     // ── minimap canvas size ───────────────────────────────────────────────────
     const [canvasSize, setCanvasSize] = useState({ w: 0, h: 0 });
@@ -674,7 +677,11 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
     // ── canvas pointer events ─────────────────────────────────────────────────
     const onCanvasPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
         if (pendingPlacement) return;
-        if ((e.target as Element).closest('[data-block]')) return;
+        const targetEl = e.target as Element;
+        if (targetEl.closest('[data-block]')) return;
+        // Clicking a line's hit-area: let the line's own onClick handle selection.
+        // Capturing the pointer / starting a marquee here would swallow that click.
+        if ((tool === 'select' || tool === 'eraser') && targetEl.closest('[data-line]')) return;
 
         if (tool === 'pan') {
             e.currentTarget.setPointerCapture(e.pointerId);
@@ -974,6 +981,84 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
         window.addEventListener('pointerup', up);
     };
 
+    // ── line dragging ─────────────────────────────────────────────────────────
+    // Drag the whole line: translates both endpoints. Endpoints anchored to a
+    // block stay glued to it (binding is preserved), only free endpoints move.
+    const onLinePointerDown = (e: ReactPointerEvent<SVGLineElement>, line: DiagramLineElement) => {
+        if (!canEdit || tool !== 'select') return;
+        e.stopPropagation();
+        setSelectedLineId(line.id);
+        setSelectedIds(new Set());
+        const fromAnchored = !!(line.fromBlockId && line.fromAnchor);
+        const toAnchored = !!(line.toBlockId && line.toAnchor);
+        if (fromAnchored && toAnchored) return; // fully bound to blocks — nothing to move
+        const sx = e.clientX, sy = e.clientY;
+        const start = { x1: line.x1, y1: line.y1, x2: line.x2, y2: line.y2 };
+        dragSnapshotRef.current = [...elementsRef.current];
+        const currentZoom = zoom;
+        let moved = false;
+        const move = (me: PointerEvent) => {
+            moved = true;
+            const dx = (me.clientX - sx) / currentZoom;
+            const dy = (me.clientY - sy) / currentZoom;
+            updateLine(line.id, {
+                ...(fromAnchored ? {} : { x1: start.x1 + dx, y1: start.y1 + dy }),
+                ...(toAnchored ? {} : { x2: start.x2 + dx, y2: start.y2 + dy }),
+            });
+        };
+        const up = () => {
+            if (moved && dragSnapshotRef.current) {
+                historyRef.current = [...historyRef.current.slice(-(HISTORY_LIMIT - 1)), dragSnapshotRef.current];
+                futureRef.current = [];
+            }
+            dragSnapshotRef.current = null;
+            window.removeEventListener('pointermove', move);
+            window.removeEventListener('pointerup', up);
+        };
+        window.addEventListener('pointermove', move);
+        window.addEventListener('pointerup', up);
+    };
+
+    // Drag a single endpoint of the selected line. Snaps to a block anchor when
+    // released near one (sets the binding), otherwise becomes a free coordinate.
+    const onLineEndpointPointerDown = (e: ReactPointerEvent<SVGCircleElement>, line: DiagramLineElement, which: 'start' | 'end') => {
+        if (!canEdit || tool !== 'select') return;
+        e.stopPropagation();
+        setDraggingLineEnd(true);
+        dragSnapshotRef.current = [...elementsRef.current];
+        let moved = false;
+        const move = (me: PointerEvent) => {
+            moved = true;
+            const pt = getCanvasPoint(me.clientX, me.clientY);
+            const near = findNearestAnchor(pt);
+            let x = pt.x, y = pt.y;
+            if (near) { const b = blockMap.get(near.blockId)!; const ap = getAnchorPoint(b, near.side); x = ap.x; y = ap.y; }
+            setAnchorHover(near);
+            if (which === 'start') {
+                updateLine(line.id, near
+                    ? { x1: x, y1: y, fromBlockId: near.blockId, fromAnchor: near.side }
+                    : { x1: x, y1: y, fromBlockId: undefined, fromAnchor: undefined });
+            } else {
+                updateLine(line.id, near
+                    ? { x2: x, y2: y, toBlockId: near.blockId, toAnchor: near.side }
+                    : { x2: x, y2: y, toBlockId: undefined, toAnchor: undefined });
+            }
+        };
+        const up = () => {
+            setAnchorHover(null);
+            setDraggingLineEnd(false);
+            if (moved && dragSnapshotRef.current) {
+                historyRef.current = [...historyRef.current.slice(-(HISTORY_LIMIT - 1)), dragSnapshotRef.current];
+                futureRef.current = [];
+            }
+            dragSnapshotRef.current = null;
+            window.removeEventListener('pointermove', move);
+            window.removeEventListener('pointerup', up);
+        };
+        window.addEventListener('pointermove', move);
+        window.addEventListener('pointerup', up);
+    };
+
     // ── selected element for properties ──────────────────────────────────────
     const selectedBlock = useMemo(() => {
         if (selectedIds.size !== 1) return null;
@@ -1020,10 +1105,12 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
             const c = resolveLineCoords(l, blockMap);
             const stroke = esc(l.strokeColor ?? '#000');
             const sw = l.strokeWidth ?? 2;
-            return `<line x1="${c.x1}" y1="${c.y1}" x2="${c.x2}" y2="${c.y2}" stroke="${stroke}" stroke-width="${sw}" ${sd(l.style)} ${em(l.endEnding,'e') ? `marker-end="${em(l.endEnding,'e')}"`:''} ${em(l.startEnding,'s') ? `marker-start="${em(l.startEnding,'s')}"`:''} />`;
+            const lineStr = `<line x1="${c.x1}" y1="${c.y1}" x2="${c.x2}" y2="${c.y2}" stroke="${stroke}" stroke-width="${sw}" ${sd(l.style)} ${em(l.endEnding,'e') ? `marker-end="${em(l.endEnding,'e')}"`:''} ${em(l.startEnding,'s') ? `marker-start="${em(l.startEnding,'s')}"`:''} />`;
+            if (!l.rotation) return lineStr;
+            return `<g transform="rotate(${l.rotation} ${(c.x1 + c.x2) / 2} ${(c.y1 + c.y2) / 2})">${lineStr}</g>`;
         }).join('\n');
         const svgPencil = elements.filter(isPencil).map((p) => `<path d="${pointsToPath(p.points)}" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`).join('\n');
-        const svgBlocks = elements.filter(isBlock).map((b) => {
+        const blockToSvg = (b: DiagramCanvasBlock): string => {
             const x = b.x, y = b.y, w = b.width, h = b.height;
             const sc = esc(b.strokeColor ?? '#1a56db'), fc = b.fillColor ? esc(b.fillColor) : undefined;
             if (b.type === 'image') return b.src ? `<image href="${b.src}" x="${x}" y="${y}" width="${w}" height="${h}" preserveAspectRatio="none"/>` : '';
@@ -1052,6 +1139,12 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
 <rect x="${x}" y="${y+22}" width="${w}" height="10" fill="${sc??'#1a56db'}"/>
 <text x="${x+w/2}" y="${y+16}" text-anchor="middle" dominant-baseline="middle" font-size="13" font-weight="700" fill="#fff">${esc(b.title)}</text>
 <text x="${x+10}" y="${y+48}" font-size="12" fill="#000" font-family="Consolas,monospace">${esc(b.body)}</text>`;
+        };
+        const svgBlocks = elements.filter(isBlock).map((b) => {
+            const inner = blockToSvg(b);
+            if (!b.rotation) return inner;
+            const cx = b.x + b.width / 2, cy = b.y + b.height / 2;
+            return `<g transform="rotate(${b.rotation} ${cx} ${cy})">${inner}</g>`;
         }).join('\n');
         const bgRect = transparent ? '' : `<rect x="${vx}" y="${vy}" width="${vw}" height="${vh}" fill="#ffffff"/>`;
         return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vx} ${vy} ${vw} ${vh}" width="${vw}" height="${vh}">\n${defs}\n${bgRect}\n${svgLines}\n${svgPencil}\n${svgBlocks}\n</svg>`;
@@ -1541,15 +1634,15 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                                 const c = resolveLineCoords(line, blockMap);
                                 const isSelLine = selectedLineId === line.id;
                                 return (
-                                    <g key={line.id}>
+                                    <g key={line.id} transform={line.rotation ? `rotate(${line.rotation} ${(c.x1 + c.x2) / 2} ${(c.y1 + c.y2) / 2})` : undefined}>
                                         {/* invisible wider hit area */}
-                                        <line x1={c.x1} y1={c.y1} x2={c.x2} y2={c.y2}
+                                        <line data-line="true" x1={c.x1} y1={c.y1} x2={c.x2} y2={c.y2}
                                             stroke="transparent" strokeWidth="12"
-                                            style={{ cursor: tool === 'select' ? 'pointer' : tool === 'eraser' ? 'pointer' : 'default', pointerEvents: 'stroke' }}
+                                            style={{ cursor: tool === 'select' ? 'move' : tool === 'eraser' ? 'pointer' : 'default', pointerEvents: 'stroke' }}
+                                            onPointerDown={(e) => onLinePointerDown(e, line)}
                                             onClick={(e) => {
                                                 e.stopPropagation();
                                                 if (tool === 'eraser') { pushHistory(); removeEl(line.id); }
-                                                else if (tool === 'select') { setSelectedLineId(line.id); setSelectedIds(new Set()); }
                                             }}
                                         />
                                         <line x1={c.x1} y1={c.y1} x2={c.x2} y2={c.y2}
@@ -1559,6 +1652,22 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                                             markerEnd={mEnd(line.endEnding)} markerStart={mStart(line.startEnding)}
                                             style={{ pointerEvents: 'none', ...(isSelLine ? { filter: 'drop-shadow(0 0 3px var(--primary))' } : {}) }}
                                         />
+                                        {isSelLine && tool === 'select' && canEdit ? (
+                                            <>
+                                                <circle cx={c.x1} cy={c.y1} r={4}
+                                                    fill="var(--surface)" stroke="var(--primary)" strokeWidth={1.5}
+                                                    style={{ cursor: 'grab', pointerEvents: 'all' }}
+                                                    onPointerDown={(e) => onLineEndpointPointerDown(e, line, 'start')}
+                                                    onClick={(e) => e.stopPropagation()}
+                                                />
+                                                <circle cx={c.x2} cy={c.y2} r={4}
+                                                    fill="var(--surface)" stroke="var(--primary)" strokeWidth={1.5}
+                                                    style={{ cursor: 'grab', pointerEvents: 'all' }}
+                                                    onPointerDown={(e) => onLineEndpointPointerDown(e, line, 'end')}
+                                                    onClick={(e) => e.stopPropagation()}
+                                                />
+                                            </>
+                                        ) : null}
                                     </g>
                                 );
                             })}
@@ -1630,7 +1739,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                             const isImage = block.type === 'image';
                             const isText = isTextBlock(block);
                             const isSelected = selectedIds.has(block.id);
-                            const showAnchors = tool === 'line' && !isEditing;
+                            const showAnchors = (tool === 'line' || draggingLineEnd) && !isEditing;
 
                             return (
                                 <div
@@ -1649,6 +1758,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                                     style={{
                                         left: block.x, top: block.y, width: block.width, height: block.height,
                                         cursor: tool === 'eraser' ? 'pointer' : undefined,
+                                        ...(block.rotation ? { transform: `rotate(${block.rotation}deg)` } : {}),
                                         ...(block.fillColor ? { '--block-fill': block.fillColor } as React.CSSProperties : {}),
                                         ...(block.strokeColor ? { '--block-stroke': block.strokeColor } as React.CSSProperties : {}),
                                         ...(block.strokeWidth ? { '--block-stroke-width': `${block.strokeWidth}px` } as React.CSSProperties : {}),
@@ -1876,6 +1986,16 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                                         onClick={() => { pushHistory(); updateEl(selectedBlock.id, { fontStyle: selectedBlock.fontStyle === 'italic' ? 'normal' : 'italic' }); }}
                                     ><i>I</i></button>
                                 </div>
+                                <div className={styles.PropRow}>
+                                    <label className={styles.PropLabel}>{t.editor.propsRotation}</label>
+                                    <input type="range" min="0" max="360" step="1"
+                                        value={selectedBlock.rotation ?? 0}
+                                        onChange={(e) => updateEl(selectedBlock.id, { rotation: Number(e.target.value) })}
+                                        onPointerUp={() => pushHistory()}
+                                        style={{ flex: 1 }}
+                                    />
+                                    <span className={styles.PropValue}>{selectedBlock.rotation ?? 0}°</span>
+                                </div>
                             </>
                         ) : selectedLine ? (
                             <>
@@ -1897,7 +2017,18 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                                     <span className={styles.PropValue}>{selectedLine.strokeWidth ?? 2}px</span>
                                 </div>
                                 <Select label={t.editor.lineStyle} value={selectedLine.style} onChange={(v) => { pushHistory(); updateLine(selectedLine.id, { style: v as LineStyle }); }} options={lineStyleOpts} />
+                                <Select label={t.editor.lineStart} value={selectedLine.startEnding} onChange={(v) => { pushHistory(); updateLine(selectedLine.id, { startEnding: v as LineEnding }); }} options={endingOpts} />
                                 <Select label={t.editor.lineEnd} value={selectedLine.endEnding} onChange={(v) => { pushHistory(); updateLine(selectedLine.id, { endEnding: v as LineEnding }); }} options={endingOpts} />
+                                <div className={styles.PropRow}>
+                                    <label className={styles.PropLabel}>{t.editor.propsRotation}</label>
+                                    <input type="range" min="0" max="360" step="1"
+                                        value={selectedLine.rotation ?? 0}
+                                        onChange={(e) => updateLine(selectedLine.id, { rotation: Number(e.target.value) })}
+                                        onPointerUp={() => pushHistory()}
+                                        style={{ flex: 1 }}
+                                    />
+                                    <span className={styles.PropValue}>{selectedLine.rotation ?? 0}°</span>
+                                </div>
                             </>
                         ) : (
                             <Typography variant="body2" color="text.secondary" style={{ marginTop: 8 }}>
