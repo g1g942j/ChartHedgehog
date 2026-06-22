@@ -1,7 +1,6 @@
 export const PARTICIPANT_ROLE_LABELS: Record<string, string> = {
     OWNER: 'Владелец',
     EDITOR: 'Редактор',
-    COMMENTATOR: 'Комментатор',
     VIEWER: 'Зритель',
 };
 

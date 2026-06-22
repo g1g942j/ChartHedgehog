@@ -2,23 +2,11 @@ import type { CollabUser } from '../model/useCollaboration';
 
 interface Props {
     users: CollabUser[];
-    connected: boolean;
 }
 
-export function CollaborationAvatars({ users, connected }: Props) {
+export function CollaborationAvatars({ users }: Props) {
     return (
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginRight: 2 }}>
-            <div
-                title={connected ? 'Совместное редактирование активно' : 'Нет соединения'}
-                style={{
-                    width: 7,
-                    height: 7,
-                    borderRadius: '50%',
-                    background: connected ? '#4caf50' : '#f44336',
-                    flexShrink: 0,
-                    transition: 'background 0.3s',
-                }}
-            />
             {users.map(user => (
                 <div
                     key={user.userId}

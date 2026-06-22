@@ -5,9 +5,26 @@ export async function waitVisible(
   locator: By,
   timeoutMs = 15_000,
 ): Promise<WebElement> {
-  const el = await driver.wait(until.elementLocated(locator), timeoutMs);
-  await driver.wait(until.elementIsVisible(el), timeoutMs);
-  return el;
+  // Store the found element in a closure variable and return a boolean from the
+  // condition function. Returning WebElement directly would cause driver.wait to
+  // treat it as a Thenable and await it, resolving to void → condition never
+  // satisfies. The closure approach avoids that ambiguity entirely.
+  let found: WebElement | null = null;
+  await driver.wait(async (): Promise<boolean> => {
+    try {
+      const els = await driver.findElements(locator);
+      if (els.length === 0) return false;
+      const el = els[0]!;
+      if (await el.isDisplayed()) {
+        found = el;
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  }, timeoutMs);
+  return found!;
 }
 
 export async function waitLocated(
@@ -49,15 +66,19 @@ export async function waitToast(
 ): Promise<string> {
   const container = By.css('[role="region"][aria-label="Уведомления"]');
   await driver.wait(until.elementLocated(container), timeoutMs);
-  const el = await driver.wait(async () => {
+  let found: WebElement | null = null;
+  await driver.wait(async (): Promise<boolean> => {
     const msgs = await driver.findElements(By.css('[aria-label="Уведомления"] [class*="Message"]'));
     for (const m of msgs) {
       const text = await m.getText();
-      if (text.includes(substring)) return m;
+      if (text.includes(substring)) {
+        found = m;
+        return true;
+      }
     }
-    return null;
+    return false;
   }, timeoutMs);
-  return (await el.getText()).trim();
+  return (await found!.getText()).trim();
 }
 
 export async function waitUrl(

@@ -5,7 +5,7 @@ import { createDriver } from "../driver-factory.js";
 import { loginAs } from "../auth-helper.js";
 import { DiagramsPage } from "../pages/diagrams.page.js";
 import { waitUrl } from "../waits.js";
-import { getAppUrl } from "../base-url.js";
+import { getAppUrl, getBackendUrl } from "../base-url.js";
 
 describe("Страница диаграмм — доступ", () => {
   let driver: import("selenium-webdriver").WebDriver;
@@ -153,16 +153,17 @@ describe("Страница диаграмм — пустое состояние"
     this.timeout(120_000);
     driver = await createDriver();
     const uniqueUser = `emptytest_${Date.now()}`;
-    const resp = await fetch(`${getAppUrl()}/api/auth/register`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        username: uniqueUser,
-        email: `${uniqueUser}@test.com`,
-        password: "TestPass123",
-      }),
-    });
-    if (!resp.ok && resp.status !== 409) {
+    // Navigate to the app first so the browser is on the correct origin for fetch
+    await driver.get(`${getAppUrl()}/login`);
+    const ok = await driver.executeAsyncScript(
+      `const [url, body, done] = arguments;
+       fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body })
+         .then(r => done(r.ok || r.status === 409 || r.status === 400))
+         .catch(() => done(false));`,
+      `${getBackendUrl()}/api/auth/register`,
+      JSON.stringify({ username: uniqueUser, email: `${uniqueUser}@test.com`, password: "TestPass123" }),
+    ) as boolean;
+    if (!ok) {
       this.skip();
       return;
     }
@@ -235,8 +236,11 @@ describe("Страница диаграмм — поиск", () => {
 
 describe("Страница диаграмм — сортировка", () => {
   let driver: import("selenium-webdriver").WebDriver;
-  const nameA = `AAA_Sort_${Date.now()}`;
-  const nameZ = `ZZZ_Sort_${Date.now()}`;
+  const ts = Date.now();
+  const nameA = `AAA_Sort_${ts}`;
+  const nameZ = `ZZZ_Sort_${ts}`;
+  // Unique filter so only THIS run's diagrams appear (not leftovers from prior runs)
+  const sortFilter = `Sort_${ts}`;
 
   before(async function () {
     this.timeout(120_000);
@@ -257,7 +261,7 @@ describe("Страница диаграмм — сортировка", () => {
 
   it("сортировка по имени А→Я ставит AAA выше ZZZ", async () => {
     const page = new DiagramsPage(driver);
-    await page.fillSearch(`_Sort_`);
+    await page.fillSearch(sortFilter);
     await driver.sleep(300);
     const sel = await page.sortSelect();
     await sel.selectByValue("name-asc");
@@ -270,7 +274,7 @@ describe("Страница диаграмм — сортировка", () => {
 
   it("сортировка по имени Я→А ставит ZZZ выше AAA", async () => {
     const page = new DiagramsPage(driver);
-    await page.fillSearch(`_Sort_`);
+    await page.fillSearch(sortFilter);
     await driver.sleep(300);
     const sel = await page.sortSelect();
     await sel.selectByValue("name-desc");

@@ -48,7 +48,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**", "/h2-console/**", "/ws/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/diagrams/my").authenticated()
-                        .requestMatchers(HttpMethod.GET, "/api/diagrams/*", "/api/diagrams/*/content").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/diagrams/*", "/api/diagrams/*/content", "/api/diagrams/*/participants").permitAll()
                         .anyRequest().authenticated()
                 )
                 .sessionManagement(session -> session

@@ -18,7 +18,7 @@
     align-items: center;
     justify-content: space-between;
     height: 48px;
-    padding: 0 8px 0 4px;
+    padding: 0 10px;
     background: var(--surface);
     border-bottom: 1px solid var(--border);
     box-shadow: 0 1px 4px rgb(0 0 0 / 0.06);
@@ -59,6 +59,7 @@
     color: var(--text-color);
     text-align: center;
     white-space: nowrap;
+    cursor: default;
 }
 
 .SaveStatus {
@@ -514,16 +515,18 @@
     flex: 1;
     overflow: hidden;
     background:
-        linear-gradient(var(--border) 1px, transparent 1px),
-        linear-gradient(90deg, var(--border) 1px, transparent 1px),
+        linear-gradient(var(--border) 1px, transparent 1px) 0 0 / 24px 24px,
+        linear-gradient(90deg, var(--border) 1px, transparent 1px) 0 0 / 24px 24px,
         var(--bg-soft);
-    background-size: 24px 24px;
 }
 
 .Canvas_drawing  { cursor: crosshair; }
-.Canvas_eraser   { cursor: cell; }
+.Canvas_eraser {
+    cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='18'%3E%3Crect x='1' y='1' width='20' height='16' rx='2' fill='%23fca5a5' stroke='%23ef4444' stroke-width='1.5'/%3E%3Crect x='1' y='9' width='20' height='8' rx='0 0 2 2' fill='%23ef4444' opacity='0.35'/%3E%3Cline x1='12' y1='1' x2='12' y2='17' stroke='%23ef4444' stroke-width='1' opacity='0.4'/%3E%3C/svg%3E") 2 16, cell;
+}
 .Canvas_pan      { cursor: grab; }
 .Canvas_grabbing { cursor: grabbing; }
+.Canvas_placing  { cursor: copy; }
 
 .CanvasContent {
     position: absolute;
@@ -770,6 +773,11 @@
     border: 1.5px solid #eab308;
     border-radius: 8px;
     box-shadow: 2px 2px 6px rgb(0 0 0 / 0.08);
+
+    .TextBlockEdit {
+        color: #78350f;
+        background: #fefce8;
+    }
 }
 
 .TextBlockContent {
@@ -885,11 +893,11 @@
 .AnchorDot {
     position: absolute;
     z-index: 10;
-    width: 10px;
-    height: 10px;
+    width: 8px;
+    height: 8px;
     cursor: crosshair;
-    background: var(--primary, #1a56db);
-    border: 2px solid #fff;
+    background: var(--surface);
+    border: 1.5px solid var(--primary);
     border-radius: 50%;
     transform: translate(-50%, -50%);
     transition: transform 0.1s, background 0.1s;
@@ -926,9 +934,11 @@
     display: flex;
     flex-direction: column;
     gap: 10px;
+    box-sizing: border-box;
     width: 200px;
     min-width: 200px;
     padding: 12px;
+    overflow-x: hidden;
     overflow-y: auto;
     background: var(--surface);
     border-left: 1px solid var(--border);
@@ -938,6 +948,13 @@
     display: flex;
     gap: 8px;
     align-items: center;
+    min-width: 0;
+
+    // Range sliders default to min-width:auto inside flex and won't shrink,
+    // forcing a horizontal scrollbar — let them shrink to the row width.
+    input[type='range'] {
+        min-width: 0;
+    }
 }
 
 .PropLabel {

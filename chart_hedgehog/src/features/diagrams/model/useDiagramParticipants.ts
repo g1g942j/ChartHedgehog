@@ -48,9 +48,8 @@ export function useDiagramParticipants(
     });
 
     const participantsQuery = useQuery({
-        queryKey: ['diagramParticipants', diagramId, currentUserQuery.data?.username],
+        queryKey: ['diagramParticipants', diagramId],
         queryFn: () => fetchDiagramParticipants(diagramId),
-        enabled: currentUserQuery.isSuccess,
     });
 
     const userOptionsQuery = useQuery({
@@ -62,9 +61,7 @@ export function useDiagramParticipants(
     const loadError =
         participantsQuery.error instanceof Error
             ? participantsQuery.error.message
-            : currentUserQuery.error instanceof Error
-              ? currentUserQuery.error.message
-              : null;
+            : null;
 
     useEffect(() => {
         if (loadError === 'Не авторизован') {

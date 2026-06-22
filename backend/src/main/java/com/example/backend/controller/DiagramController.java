@@ -149,7 +149,8 @@ public class DiagramController {
     @GetMapping("/{id}/participants")
     public ResponseEntity<?> getParticipants(@PathVariable Long id) {
         try {
-            Long uid = userService.getCurrentUser().getId();
+            var user = userService.getCurrentUserOrNull();
+            Long uid = user != null ? user.getId() : null;
             List<DiagramParticipantDto> list = diagramService.getParticipantDtos(id, uid);
             return ResponseEntity.ok(list);
         } catch (Exception e) {

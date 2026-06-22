@@ -34,10 +34,11 @@ function LanguageFlag({ src }: LanguageFlagProps) {
 
 export type LanguageSwitcherProps = {
     flagOnly?: boolean;
+    showCode?: boolean;
 };
 
 export function LanguageSwitcher(props: LanguageSwitcherProps) {
-    const { flagOnly = false } = props;
+    const { flagOnly = false, showCode = false } = props;
     const { locale, setLocale, t } = useLocale();
 
     const handleChange = (event: SelectChangeEvent<Locale>) => {
@@ -67,14 +68,20 @@ export function LanguageSwitcher(props: LanguageSwitcherProps) {
                 },
             }}
             renderValue={() => (
-                <span className={styles.LanguageSwitcher_value}>
-                    <LanguageFlag src={currentFlagSrc} />
-                    {!flagOnly ? (
-                        <span className={styles.LanguageSwitcher_label}>
-                            {t.languageName}
-                        </span>
-                    ) : null}
-                </span>
+                showCode ? (
+                    <span className={styles.LanguageSwitcher_value}>
+                        {locale.toUpperCase()}
+                    </span>
+                ) : (
+                    <span className={styles.LanguageSwitcher_value}>
+                        <LanguageFlag src={currentFlagSrc} />
+                        {!flagOnly ? (
+                            <span className={styles.LanguageSwitcher_label}>
+                                {t.languageName}
+                            </span>
+                        ) : null}
+                    </span>
+                )
             )}
         >
             {localeOptions.map((option) => (

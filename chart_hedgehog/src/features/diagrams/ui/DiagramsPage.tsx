@@ -39,6 +39,24 @@ function DiagramCardSkeleton() {
     );
 }
 
+function DiagramGridSkeleton() {
+    return (
+        <li className={styles.GridItem}>
+            <div className={styles.GridItemPreview}>
+                <Skeleton width="80%" height={140} borderRadius={6} />
+            </div>
+            <div className={styles.GridItemInfo}>
+                <Skeleton width="70%" height={14} />
+                <Skeleton width={56} height={20} borderRadius={999} />
+            </div>
+            <div className={styles.CardActions}>
+                <Skeleton width={80} height={28} borderRadius={6} />
+                <Skeleton width={32} height={28} borderRadius={6} />
+            </div>
+        </li>
+    );
+}
+
 export function DiagramsPage() {
     const { t } = useLocale();
     const {
@@ -51,6 +69,7 @@ export function DiagramsPage() {
         handleCreate,
         cloningId,
         handleClone,
+        generatedPreviews,
     } = useDiagramsList();
 
     const [search, setSearch] = useState('');
@@ -84,9 +103,12 @@ export function DiagramsPage() {
 
     if (loadError && loadError !== 'Не авторизован') {
         return (
-            <main className={styles.Page}>
-                <Alert severity="error">{loadError}</Alert>
-            </main>
+            <>
+                <AppNavbar />
+                <main className={styles.Page}>
+                    <Alert severity="error">{loadError}</Alert>
+                </main>
+            </>
         );
     }
 
@@ -123,11 +145,19 @@ export function DiagramsPage() {
 
                 {isLoading ? (
                     <section>
-                        <ul className={styles.List}>
-                            {Array.from({ length: 4 }).map((_, i) => (
-                                <DiagramCardSkeleton key={i} />
-                            ))}
-                        </ul>
+                        {viewMode === 'grid' ? (
+                            <ul className={styles.GridList}>
+                                {Array.from({ length: 6 }).map((_, i) => (
+                                    <DiagramGridSkeleton key={i} />
+                                ))}
+                            </ul>
+                        ) : (
+                            <ul className={styles.List}>
+                                {Array.from({ length: 4 }).map((_, i) => (
+                                    <DiagramCardSkeleton key={i} />
+                                ))}
+                            </ul>
+                        )}
                     </section>
                 ) : diagrams.length === 0 ? (
                     <div className={styles.EmptyState}>
@@ -143,7 +173,7 @@ export function DiagramsPage() {
                                     label=""
                                     value={search}
                                     onChange={setSearch}
-                                    placeholder="Поиск по названию…"
+                                    placeholder={t.diagrams.searchPlaceholder}
                                 />
                             </div>
                             <select
@@ -151,25 +181,25 @@ export function DiagramsPage() {
                                 value={sort}
                                 onChange={(e) => setSort(e.target.value as SortKey)}
                             >
-                                <option value="date-new">Сначала новые</option>
-                                <option value="date-old">Сначала старые</option>
-                                <option value="name-asc">По имени А→Я</option>
-                                <option value="name-desc">По имени Я→А</option>
+                                <option value="date-new">{t.diagrams.sortDateNew}</option>
+                                <option value="date-old">{t.diagrams.sortDateOld}</option>
+                                <option value="name-asc">{t.diagrams.sortNameAsc}</option>
+                                <option value="name-desc">{t.diagrams.sortNameDesc}</option>
                             </select>
                             <select
                                 className={styles.SortSelect}
                                 value={roleFilter}
                                 onChange={(e) => setRoleFilter(e.target.value as RoleFilter)}
                             >
-                                <option value="all">Все роли</option>
-                                <option value="OWNER">Владелец</option>
-                                <option value="EDITOR">Редактор</option>
-                                <option value="VIEWER">Зритель</option>
+                                <option value="all">{t.diagrams.filterAllRoles}</option>
+                                <option value="OWNER">{t.roles.OWNER}</option>
+                                <option value="EDITOR">{t.roles.EDITOR}</option>
+                                <option value="VIEWER">{t.roles.VIEWER}</option>
                             </select>
                             <button
                                 type="button"
                                 className={`${styles.ViewToggle} ${viewMode === 'list' ? styles.ViewToggle_active : ''}`}
-                                title="Список"
+                                title={t.diagrams.viewList}
                                 onClick={() => { setViewMode('list'); localStorage.setItem('diagrams-view', 'list'); }}
                             >
                                 <ViewListOutlinedIcon fontSize="small" />
@@ -177,7 +207,7 @@ export function DiagramsPage() {
                             <button
                                 type="button"
                                 className={`${styles.ViewToggle} ${viewMode === 'grid' ? styles.ViewToggle_active : ''}`}
-                                title="Сетка"
+                                title={t.diagrams.viewGrid}
                                 onClick={() => { setViewMode('grid'); localStorage.setItem('diagrams-view', 'grid'); }}
                             >
                                 <GridViewOutlinedIcon fontSize="small" />
@@ -187,7 +217,7 @@ export function DiagramsPage() {
                         {filtered.length === 0 ? (
                             <div className={styles.EmptyState}>
                                 <Typography color="text.secondary">
-                                    Ничего не найдено
+                                    {t.diagrams.noResults}
                                 </Typography>
                             </div>
                         ) : viewMode === 'grid' ? (
@@ -195,10 +225,10 @@ export function DiagramsPage() {
                                 {filtered.map((diagram) => (
                                     <li key={diagram.id} className={styles.GridItem}>
                                         <Link href={`/diagrams/${diagram.id}`} className={styles.GridItemPreview} aria-label={diagram.name}>
-                                            {diagram.preview ? (
+                                            {(diagram.preview ?? generatedPreviews[diagram.id]) ? (
                                                 // eslint-disable-next-line @next/next/no-img-element
                                                 <img
-                                                    src={`data:image/svg+xml,${encodeURIComponent(diagram.preview)}`}
+                                                    src={`data:image/svg+xml,${encodeURIComponent((diagram.preview ?? generatedPreviews[diagram.id])!)}`}
                                                     alt=""
                                                     className={styles.GridItemPreviewImg}
                                                 />
@@ -216,7 +246,7 @@ export function DiagramsPage() {
                                                 variant="outlined" size="small"
                                                 loading={cloningId === diagram.id}
                                                 disabled={cloningId !== null}
-                                                title="Клонировать"
+                                                title={t.diagrams.clone}
                                                 onClick={() => void handleClone(diagram.id)}
                                             >
                                                 <ContentCopyOutlinedIcon fontSize="small" />
@@ -264,7 +294,7 @@ export function DiagramsPage() {
                                                 size="small"
                                                 loading={cloningId === diagram.id}
                                                 disabled={cloningId !== null}
-                                                title="Клонировать диаграмму"
+                                                title={t.diagrams.clone}
                                                 onClick={() => void handleClone(diagram.id)}
                                             >
                                                 <ContentCopyOutlinedIcon fontSize="small" />
