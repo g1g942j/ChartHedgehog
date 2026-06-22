@@ -149,6 +149,27 @@ function snapV(v: number, snap: boolean): number {
     return snap ? Math.round(v / GRID_SIZE) * GRID_SIZE : v;
 }
 
+// Per-type default stroke colour, matching the CSS/SVG-export fallbacks. Used so
+// the properties panel shows the colour a block is actually drawn with (e.g. a
+// triangle is green, not the generic blue) when strokeColor isn't set yet.
+const DEFAULT_STROKE_BY_TYPE: Record<string, string> = {
+    rectangle: '#3b82f6',
+    circle: '#ec4899',
+    diamond: '#f59e0b',
+    triangle: '#22c55e',
+    sticky: '#eab308',
+    'bpmn-task': '#3b82f6',
+    'bpmn-event': '#22c55e',
+    'bpmn-end': '#ef4444',
+    'bpmn-gateway': '#eab308',
+    'er-entity': '#1a56db',
+    'er-attribute': '#1a56db',
+    'er-relation': '#7c3aed',
+};
+function defaultStrokeColor(type: string): string {
+    return DEFAULT_STROKE_BY_TYPE[type] ?? '#1a56db';
+}
+
 // ─── SVG defs ─────────────────────────────────────────────────────────────────
 
 function SvgDefs({ snapToGrid }: { snapToGrid: boolean }) {
@@ -231,6 +252,9 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
     // ── history ───────────────────────────────────────────────────────────────
     const historyRef = useRef<DiagramElement[][]>([]);
     const futureRef = useRef<DiagramElement[][]>([]);
+    // Reactive flags mirroring the ref lengths so the undo/redo buttons can grey out.
+    const [canUndo, setCanUndo] = useState(false);
+    const [canRedo, setCanRedo] = useState(false);
     const elementsRef = useRef<DiagramElement[]>(initialEditorState.blocks);
     const dragSnapshotRef = useRef<DiagramElement[] | null>(null);
     const lastBroadcastedRef = useRef<Map<string, DiagramElement>>(
@@ -323,10 +347,18 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
     }, [elements]);
 
     // ── history helpers ───────────────────────────────────────────────────────
-    const pushHistory = useCallback(() => {
-        historyRef.current = [...historyRef.current.slice(-(HISTORY_LIMIT - 1)), elementsRef.current];
+    // Push a snapshot onto the undo stack and clear the redo stack, keeping the
+    // reactive can-undo/can-redo flags in sync.
+    const recordHistory = useCallback((snapshot: DiagramElement[]) => {
+        historyRef.current = [...historyRef.current.slice(-(HISTORY_LIMIT - 1)), snapshot];
         futureRef.current = [];
+        setCanUndo(true);
+        setCanRedo(false);
     }, []);
+
+    const pushHistory = useCallback(() => {
+        recordHistory(elementsRef.current);
+    }, [recordHistory]);
 
     const undo = useCallback(() => {
         const past = historyRef.current;
@@ -336,6 +368,8 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
         setElements(past[past.length - 1]!);
         setSelectedIds(new Set());
         setSelectedLineId(null);
+        setCanUndo(historyRef.current.length > 0);
+        setCanRedo(true);
     }, []);
 
     const redo = useCallback(() => {
@@ -346,6 +380,8 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
         setElements(future[0]!);
         setSelectedIds(new Set());
         setSelectedLineId(null);
+        setCanUndo(true);
+        setCanRedo(futureRef.current.length > 0);
     }, []);
 
     const copySelected = useCallback(() => {
@@ -473,7 +509,8 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
     }, [canEdit, selectedIds]);
 
     useEffect(() => {
-        const existingIds = new Set(elements.filter(isBlock).map((b) => b.id));
+        // Groups may contain both block and line ids — keep any element id alive.
+        const existingIds = new Set(elements.map((el) => (el as { id: string }).id));
         setGroups((cur) => {
             const next = cur.map((g) => ({ ...g, blockIds: g.blockIds.filter((id) => existingIds.has(id)) })).filter((g) => g.blockIds.length >= 2);
             return next.length === cur.length && next.every((g, i) => g.blockIds.length === cur[i].blockIds.length) ? cur : next;
@@ -774,7 +811,15 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                     const inBox = elements.filter(isBlock).filter(
                         (b) => b.x < maxX && b.x + b.width > minX && b.y < maxY && b.y + b.height > minY,
                     );
-                    setSelectedIds(new Set(inBox.map((b) => b.id)));
+                    // Lines join the selection when both endpoints fall inside the box,
+                    // so they can be grouped together with blocks.
+                    const linesInBox = elements.filter(isLine).filter((l) => {
+                        const c = resolveLineCoords(l, blockMap);
+                        return c.x1 >= minX && c.x1 <= maxX && c.y1 >= minY && c.y1 <= maxY
+                            && c.x2 >= minX && c.x2 <= maxX && c.y2 >= minY && c.y2 <= maxY;
+                    });
+                    setSelectedIds(new Set([...inBox.map((b) => b.id), ...linesInBox.map((l) => l.id)]));
+                    setSelectedLineId(null);
                 }
                 setSelBox(null); selBoxStartRef.current = null;
             }
@@ -877,10 +922,31 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
     const commitEdit = useCallback(() => {
         const e = editingRef.current;
         if (!e) return;
+        const block = elementsRef.current.find((el) => isBlock(el) && el.id === e.id) as DiagramCanvasBlock | undefined;
+        // Drop text/comment blocks left empty — an invisible empty block is just clutter.
+        if (block && isTextBlock(block) && e.title.trim() === '' && e.body.trim() === '') {
+            pushHistory();
+            removeEl(e.id);
+            setEditing(null);
+            return;
+        }
         pushHistory();
         updateEl(e.id, { title: e.title, body: e.body });
         setEditing(null);
-    }, [pushHistory, updateEl, setEditing]);
+    }, [pushHistory, updateEl, removeEl, setEditing]);
+
+    // Cancel editing (Escape): discard edits, and drop a still-empty text block.
+    const cancelEditing = useCallback(() => {
+        const e = editingRef.current;
+        if (e) {
+            const block = elementsRef.current.find((el) => isBlock(el) && el.id === e.id) as DiagramCanvasBlock | undefined;
+            if (block && isTextBlock(block) && (block.title ?? '').trim() === '' && (block.body ?? '').trim() === '') {
+                pushHistory();
+                removeEl(e.id);
+            }
+        }
+        setEditing(null);
+    }, [pushHistory, removeEl, setEditing]);
 
     // ── drag-drop ─────────────────────────────────────────────────────────────
     const onDragStart = (e: DragEvent<HTMLButtonElement>, type: string) =>
@@ -896,6 +962,59 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
         const id = generateId(tpl.type);
         pushHistory();
         setElements((cur) => [...cur, createBlock(tpl, id, pt.x - 40, pt.y - 24)]);
+    };
+
+    // Drag a set of elements (blocks + lines) together by the pointer delta. Free
+    // line endpoints translate; anchored endpoints follow their block. Records a
+    // single history entry on release. Used for both block-grab and line-grab moves.
+    const beginElementsDrag = (moveIds: Set<string>, startClientX: number, startClientY: number) => {
+        const blockStarts = new Map<string, { x: number; y: number }>(
+            elementsRef.current.filter(isBlock).filter((b) => moveIds.has(b.id)).map((b) => [b.id, { x: b.x, y: b.y }]),
+        );
+        const lineStarts = new Map<string, { x1: number; y1: number; x2: number; y2: number; fromAnchored: boolean; toAnchored: boolean }>(
+            elementsRef.current.filter(isLine).filter((l) => moveIds.has(l.id)).map((l) => [l.id, {
+                x1: l.x1, y1: l.y1, x2: l.x2, y2: l.y2,
+                fromAnchored: !!(l.fromBlockId && l.fromAnchor),
+                toAnchored: !!(l.toBlockId && l.toAnchor),
+            }]),
+        );
+        dragSnapshotRef.current = [...elementsRef.current];
+        let moved = false;
+        const currentZoom = zoom;
+        const COORD_LIMIT = 50000;
+        const move = (me: PointerEvent) => {
+            moved = true;
+            const dx = snapV((me.clientX - startClientX) / currentZoom, snapToGrid);
+            const dy = snapV((me.clientY - startClientY) / currentZoom, snapToGrid);
+            setElements((cur) => cur.map((el) => {
+                if (isBlock(el) && moveIds.has(el.id)) {
+                    const start = blockStarts.get(el.id);
+                    if (!start) return el;
+                    const nx = snapV(start.x + dx, snapToGrid);
+                    const ny = snapV(start.y + dy, snapToGrid);
+                    if (!isFinite(nx) || !isFinite(ny)) return el;
+                    return { ...el, x: Math.max(-COORD_LIMIT, Math.min(COORD_LIMIT, nx)), y: Math.max(-COORD_LIMIT, Math.min(COORD_LIMIT, ny)) };
+                }
+                if (isLine(el) && moveIds.has(el.id)) {
+                    const ls = lineStarts.get(el.id);
+                    if (!ls) return el;
+                    return {
+                        ...el,
+                        ...(ls.fromAnchored ? {} : { x1: ls.x1 + dx, y1: ls.y1 + dy }),
+                        ...(ls.toAnchored ? {} : { x2: ls.x2 + dx, y2: ls.y2 + dy }),
+                    };
+                }
+                return el;
+            }));
+        };
+        const up = () => {
+            if (moved && dragSnapshotRef.current) recordHistory(dragSnapshotRef.current);
+            dragSnapshotRef.current = null;
+            window.removeEventListener('pointermove', move);
+            window.removeEventListener('pointerup', up);
+        };
+        window.addEventListener('pointermove', move);
+        window.addEventListener('pointerup', up);
     };
 
     // ── block pointer events ──────────────────────────────────────────────────
@@ -925,40 +1044,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
         setSelectedLineId(null);
 
         e.currentTarget.setPointerCapture(e.pointerId);
-        const startPositions = new Map<string, { x: number; y: number }>(
-            elementsRef.current.filter(isBlock).filter((b) => moveIds.has(b.id)).map((b) => [b.id, { x: b.x, y: b.y }]),
-        );
-        const sx = e.clientX, sy = e.clientY;
-        dragSnapshotRef.current = [...elementsRef.current];
-        let moved = false;
-        const currentZoom = zoom;
-
-        const COORD_LIMIT = 50000;
-        const move = (me: PointerEvent) => {
-            moved = true;
-            const dx = snapV((me.clientX - sx) / currentZoom, snapToGrid);
-            const dy = snapV((me.clientY - sy) / currentZoom, snapToGrid);
-            setElements((cur) => cur.map((el) => {
-                if (!isBlock(el) || !moveIds.has(el.id)) return el;
-                const start = startPositions.get(el.id);
-                if (!start) return el;
-                const nx = snapV(start.x + dx, snapToGrid);
-                const ny = snapV(start.y + dy, snapToGrid);
-                if (!isFinite(nx) || !isFinite(ny)) return el;
-                return { ...el, x: Math.max(-COORD_LIMIT, Math.min(COORD_LIMIT, nx)), y: Math.max(-COORD_LIMIT, Math.min(COORD_LIMIT, ny)) };
-            }));
-        };
-        const up = () => {
-            if (moved && dragSnapshotRef.current) {
-                historyRef.current = [...historyRef.current.slice(-(HISTORY_LIMIT - 1)), dragSnapshotRef.current];
-                futureRef.current = [];
-            }
-            dragSnapshotRef.current = null;
-            window.removeEventListener('pointermove', move);
-            window.removeEventListener('pointerup', up);
-        };
-        window.addEventListener('pointermove', move);
-        window.addEventListener('pointerup', up);
+        beginElementsDrag(moveIds, e.clientX, e.clientY);
     };
 
     const onBlockResize = (e: ReactPointerEvent<HTMLButtonElement>, block: DiagramCanvasBlock) => {
@@ -973,7 +1059,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
             height: Math.max(60, snapV(sh + (me.clientY - sy) / currentZoom, snapToGrid)),
         });
         const up = () => {
-            if (dragSnapshotRef.current) { historyRef.current = [...historyRef.current.slice(-(HISTORY_LIMIT - 1)), dragSnapshotRef.current]; futureRef.current = []; dragSnapshotRef.current = null; }
+            if (dragSnapshotRef.current) { recordHistory(dragSnapshotRef.current); dragSnapshotRef.current = null; }
             window.removeEventListener('pointermove', move);
             window.removeEventListener('pointerup', up);
         };
@@ -987,6 +1073,17 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
     const onLinePointerDown = (e: ReactPointerEvent<SVGLineElement>, line: DiagramLineElement) => {
         if (!canEdit || tool !== 'select') return;
         e.stopPropagation();
+
+        // If the line belongs to a group, grabbing it drags the whole group.
+        const group = groups.find((g) => g.blockIds.includes(line.id));
+        if (group) {
+            const moveIds = new Set(group.blockIds);
+            setSelectedIds(moveIds);
+            setSelectedLineId(null);
+            beginElementsDrag(moveIds, e.clientX, e.clientY);
+            return;
+        }
+
         setSelectedLineId(line.id);
         setSelectedIds(new Set());
         const fromAnchored = !!(line.fromBlockId && line.fromAnchor);
@@ -1008,8 +1105,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
         };
         const up = () => {
             if (moved && dragSnapshotRef.current) {
-                historyRef.current = [...historyRef.current.slice(-(HISTORY_LIMIT - 1)), dragSnapshotRef.current];
-                futureRef.current = [];
+                recordHistory(dragSnapshotRef.current);
             }
             dragSnapshotRef.current = null;
             window.removeEventListener('pointermove', move);
@@ -1048,8 +1144,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
             setAnchorHover(null);
             setDraggingLineEnd(false);
             if (moved && dragSnapshotRef.current) {
-                historyRef.current = [...historyRef.current.slice(-(HISTORY_LIMIT - 1)), dragSnapshotRef.current];
-                futureRef.current = [];
+                recordHistory(dragSnapshotRef.current);
             }
             dragSnapshotRef.current = null;
             window.removeEventListener('pointermove', move);
@@ -1132,7 +1227,8 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                 else if (b.type === 'diamond') shapeEl = `<polygon points="${x+w/2},${y+PAD/2} ${x+w-PAD/2},${y+h/2} ${x+w/2},${y+h-PAD/2} ${x+PAD/2},${y+h/2}" fill="${fc??'none'}" stroke="${color}" stroke-width="2.5"/>`;
                 else if (b.type === 'triangle') shapeEl = `<polygon points="${x+w/2},${y+PAD/2} ${x+w-PAD/2},${y+h-PAD/2} ${x+PAD/2},${y+h-PAD/2}" fill="${fc??'none'}" stroke="${color}" stroke-width="2.5"/>`;
                 else if (b.type === 'sticky') shapeEl = `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${fc??'#fef9c3'}" stroke="${color}" stroke-width="2" rx="4"/>`;
-                return `${shapeEl}\n<text x="${x+w/2}" y="${y+h/2}" text-anchor="middle" dominant-baseline="middle" font-size="${b.fontSize??13}" font-weight="600" fill="${color}">${esc(b.title)}</text>`;
+                const labelFill = b.textColor ? esc(b.textColor) : '#1f2937';
+                return `${shapeEl}\n<text x="${x+w/2}" y="${y+h/2}" text-anchor="middle" dominant-baseline="middle" font-size="${b.fontSize??13}" font-weight="600" fill="${labelFill}">${esc(b.title)}</text>`;
             }
             return `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${fc??'#fff'}" stroke="${sc??'#1a56db'}" stroke-width="2" rx="10"/>
 <rect x="${x}" y="${y}" width="${w}" height="32" fill="${sc??'#1a56db'}" rx="10"/>
@@ -1373,8 +1469,8 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                     <CollaborationAvatars users={remoteUsers} />
                     {canEdit ? (
                         <>
-                            <button type="button" className={styles.TopBarBtn} title={t.editor.undo} onClick={undo}><UndoOutlinedIcon fontSize="small" /></button>
-                            <button type="button" className={styles.TopBarBtn} title={t.editor.redo} onClick={redo}><RedoOutlinedIcon fontSize="small" /></button>
+                            <button type="button" className={styles.TopBarBtn} title={t.editor.undo} onClick={undo} disabled={!canUndo}><UndoOutlinedIcon fontSize="small" /></button>
+                            <button type="button" className={styles.TopBarBtn} title={t.editor.redo} onClick={redo} disabled={!canRedo}><RedoOutlinedIcon fontSize="small" /></button>
                         </>
                     ) : null}
                     <LanguageSwitcher showCode />
@@ -1620,9 +1716,10 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                         if (pendingPlacement) {
                             const pt = getCanvasPoint(e.clientX, e.clientY);
                             placePendingElements(pt.x, pt.y);
-                            return;
                         }
-                        setSelectedIds(new Set()); setSelectedLineId(null);
+                        // Selection is cleared on empty-canvas pointerdown (see
+                        // onCanvasPointerDown). Doing it here too would wipe a marquee
+                        // selection that pointerup just made (the click fires after).
                     }}
                 >
                     <div ref={canvasContentRef} className={styles.CanvasContent} style={{ transform: `translate(${panX}px, ${panY}px) scale(${zoom})` }}>
@@ -1704,14 +1801,20 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                         </svg>
 
                         {groups.map((g) => {
-                            const members = elements.filter(isBlock).filter((b) => g.blockIds.includes(b.id));
-                            if (members.length < 2) return null;
-                            const minX = Math.min(...members.map((b) => b.x));
-                            const minY = Math.min(...members.map((b) => b.y));
-                            const maxX = Math.max(...members.map((b) => b.x + b.width));
-                            const maxY = Math.max(...members.map((b) => b.y + b.height));
+                            const memberSet = new Set(g.blockIds);
+                            const blockMembers = elements.filter(isBlock).filter((b) => memberSet.has(b.id));
+                            const lineMembers = elements.filter(isLine).filter((l) => memberSet.has(l.id));
+                            if (blockMembers.length + lineMembers.length < 2) return null;
+                            const xs: number[] = [], ys: number[] = [];
+                            blockMembers.forEach((b) => { xs.push(b.x, b.x + b.width); ys.push(b.y, b.y + b.height); });
+                            lineMembers.forEach((l) => { const c = resolveLineCoords(l, blockMap); xs.push(c.x1, c.x2); ys.push(c.y1, c.y2); });
+                            if (!xs.length) return null;
+                            const minX = Math.min(...xs);
+                            const minY = Math.min(...ys);
+                            const maxX = Math.max(...xs);
+                            const maxY = Math.max(...ys);
                             const PAD = 8;
-                            const isGroupSelected = members.some((b) => selectedIds.has(b.id));
+                            const isGroupSelected = g.blockIds.some((id) => selectedIds.has(id));
                             return (
                                 <div
                                     key={g.id}
@@ -1779,7 +1882,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                                                 autoFocus
                                                 onChange={(e) => setEditing({ ...editing, title: e.target.value })}
                                                 onBlur={commitEdit}
-                                                onKeyDown={(e) => { if (e.key === 'Escape') setEditing(null); }}
+                                                onKeyDown={(e) => { if (e.key === 'Escape') cancelEditing(); }}
                                             />
                                         ) : (
                                             <div className={styles.BlockEditForm}
@@ -1934,6 +2037,8 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                         <Typography variant="subtitle2" className={styles.PanelTitle}>{t.editor.toolProps}</Typography>
                         {selectedBlock ? (
                             <>
+                                {selectedBlock.type !== 'image' ? (
+                                <>
                                 <div className={styles.PropRow}>
                                     <label className={styles.PropLabel}>{t.editor.propsFill}</label>
                                     <input type="color" className={styles.ColorInput}
@@ -1944,7 +2049,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                                 <div className={styles.PropRow}>
                                     <label className={styles.PropLabel}>{t.editor.propsStrokeColor}</label>
                                     <input type="color" className={styles.ColorInput}
-                                        value={selectedBlock.strokeColor ?? '#1a56db'}
+                                        value={selectedBlock.strokeColor ?? defaultStrokeColor(selectedBlock.type)}
                                         onChange={(e) => { pushHistory(); updateEl(selectedBlock.id, { strokeColor: e.target.value }); }}
                                     />
                                 </div>
@@ -1986,6 +2091,8 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                                         onClick={() => { pushHistory(); updateEl(selectedBlock.id, { fontStyle: selectedBlock.fontStyle === 'italic' ? 'normal' : 'italic' }); }}
                                     ><i>I</i></button>
                                 </div>
+                                </>
+                                ) : null}
                                 <div className={styles.PropRow}>
                                     <label className={styles.PropLabel}>{t.editor.propsRotation}</label>
                                     <input type="range" min="0" max="360" step="1"

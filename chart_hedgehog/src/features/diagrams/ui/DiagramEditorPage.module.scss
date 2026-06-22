@@ -41,6 +41,17 @@
         background: var(--bg-soft);
         border-color: var(--border);
     }
+
+    &:disabled {
+        color: var(--text-secondary, #9aa3af);
+        cursor: default;
+        opacity: 0.4;
+
+        &:hover {
+            background: transparent;
+            border-color: transparent;
+        }
+    }
 }
 
 .TopBarBtn_active {
@@ -703,7 +714,9 @@
     font-size: var(--block-font-size, 13px);
     font-style: var(--block-font-style, normal);
     font-weight: var(--block-font-weight, 600);
-    color: var(--block-text-color, currentColor);
+    // Own text-colour property first; default to theme text, NOT the stroke
+    // colour (currentColor) — otherwise the label changes with the border.
+    color: var(--block-text-color, var(--text-color, #1f2937));
     text-align: center;
     overflow-wrap: break-word;
 }
