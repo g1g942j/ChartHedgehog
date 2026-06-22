@@ -818,7 +818,11 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                         return c.x1 >= minX && c.x1 <= maxX && c.y1 >= minY && c.y1 <= maxY
                             && c.x2 >= minX && c.x2 <= maxX && c.y2 >= minY && c.y2 <= maxY;
                     });
-                    setSelectedIds(new Set([...inBox.map((b) => b.id), ...linesInBox.map((l) => l.id)]));
+                    // Pencil strokes join when all of their points fall inside the box.
+                    const pencilsInBox = elements.filter(isPencil).filter((p) =>
+                        p.points.length > 0 && p.points.every(([px, py]) => px >= minX && px <= maxX && py >= minY && py <= maxY),
+                    );
+                    setSelectedIds(new Set([...inBox.map((b) => b.id), ...linesInBox.map((l) => l.id), ...pencilsInBox.map((p) => p.id)]));
                     setSelectedLineId(null);
                 }
                 setSelBox(null); selBoxStartRef.current = null;
@@ -978,6 +982,9 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                 toAnchored: !!(l.toBlockId && l.toAnchor),
             }]),
         );
+        const pencilStarts = new Map<string, [number, number][]>(
+            elementsRef.current.filter(isPencil).filter((p) => moveIds.has(p.id)).map((p) => [p.id, p.points]),
+        );
         dragSnapshotRef.current = [...elementsRef.current];
         let moved = false;
         const currentZoom = zoom;
@@ -1003,6 +1010,11 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                         ...(ls.fromAnchored ? {} : { x1: ls.x1 + dx, y1: ls.y1 + dy }),
                         ...(ls.toAnchored ? {} : { x2: ls.x2 + dx, y2: ls.y2 + dy }),
                     };
+                }
+                if (isPencil(el) && moveIds.has(el.id)) {
+                    const pts = pencilStarts.get(el.id);
+                    if (!pts) return el;
+                    return { ...el, points: pts.map(([px, py]) => [px + dx, py + dy] as [number, number]) };
                 }
                 return el;
             }));
@@ -1054,9 +1066,13 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
         const sx = e.clientX, sy = e.clientY, sw = block.width, sh = block.height;
         dragSnapshotRef.current = [...elementsRef.current];
         const currentZoom = zoom;
+        // BPMN/ER/mockup blocks are intentionally small — keep their minimums low
+        // so resizing matches their real (sub-80×60) dimensions.
+        const compact = isBpmnBlockType(block.type) || isErBlockType(block.type) || isMockupBlockType(block.type);
+        const minW = compact ? 24 : 80, minH = compact ? 24 : 60;
         const move = (me: PointerEvent) => updateEl(block.id, {
-            width: Math.max(80, snapV(sw + (me.clientX - sx) / currentZoom, snapToGrid)),
-            height: Math.max(60, snapV(sh + (me.clientY - sy) / currentZoom, snapToGrid)),
+            width: Math.max(minW, snapV(sw + (me.clientX - sx) / currentZoom, snapToGrid)),
+            height: Math.max(minH, snapV(sh + (me.clientY - sy) / currentZoom, snapToGrid)),
         });
         const up = () => {
             if (dragSnapshotRef.current) { recordHistory(dragSnapshotRef.current); dragSnapshotRef.current = null; }
@@ -1335,7 +1351,6 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
     const isDrawing = tool === 'line' || tool === 'pencil';
 
     const filteredShapes = useMemo(() => { const q = shapeSearch.toLowerCase(); return q ? SHAPE_BLOCK_TEMPLATES.filter((t) => t.name.toLowerCase().includes(q) || (t.nameRu ?? '').toLowerCase().includes(q)) : SHAPE_BLOCK_TEMPLATES; }, [shapeSearch]);
-    const filteredUml = useMemo(() => { const q = shapeSearch.toLowerCase(); return q ? UML_BLOCK_TEMPLATES.filter((t) => t.name.toLowerCase().includes(q) || (t.nameRu ?? '').toLowerCase().includes(q)) : UML_BLOCK_TEMPLATES; }, [shapeSearch]);
     const filteredBpmn = useMemo(() => { const q = shapeSearch.toLowerCase(); return q ? BPMN_BLOCK_TEMPLATES.filter((t) => t.name.toLowerCase().includes(q) || (t.nameRu ?? '').toLowerCase().includes(q)) : BPMN_BLOCK_TEMPLATES; }, [shapeSearch]);
     const filteredEr = useMemo(() => { const q = shapeSearch.toLowerCase(); return q ? ER_BLOCK_TEMPLATES.filter((t) => t.name.toLowerCase().includes(q) || (t.nameRu ?? '').toLowerCase().includes(q)) : ER_BLOCK_TEMPLATES; }, [shapeSearch]);
     const filteredMockup = useMemo(() => { const q = shapeSearch.toLowerCase(); return q ? MOCKUP_BLOCK_TEMPLATES.filter((t) => t.name.toLowerCase().includes(q) || (t.nameRu ?? '').toLowerCase().includes(q)) : MOCKUP_BLOCK_TEMPLATES; }, [shapeSearch]);
@@ -1632,7 +1647,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                 ) : leftPanel === 'templates' ? (
                     <div className={styles.LeftPanel}>
                         <Typography variant="subtitle2" className={styles.PanelTitle}>{t.editor.panelLibraries}</Typography>
-                        <button type="button" className={styles.PaletteItem} onClick={() => setLeftPanel('uml')}><TableChartOutlinedIcon fontSize="small" style={{ marginRight: 6 }} />{t.editor.panelUml}</button>
+                        <button type="button" className={styles.PaletteItem} onClick={() => setLeftPanel('uml')}>{t.editor.panelUml}</button>
                         <button type="button" className={styles.PaletteItem} onClick={() => setLeftPanel('bpmn')}>{t.editor.panelBpmn}</button>
                         <button type="button" className={styles.PaletteItem} onClick={() => setLeftPanel('er')}>{t.editor.panelEr}</button>
                         <button type="button" className={styles.PaletteItem} onClick={() => setLeftPanel('mockup')}>{t.editor.panelMockup}</button>
@@ -1644,11 +1659,9 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                     <div className={styles.LeftPanel}>
                         <button type="button" className={styles.PanelBack} onClick={() => setLeftPanel('templates')}>{t.editor.panelBack}</button>
                         <Typography variant="subtitle2" className={styles.PanelTitle}>{t.editor.panelUml}</Typography>
-                        <input className={styles.PanelSearch} placeholder={t.editor.panelSearch} value={shapeSearch} onChange={(e) => setShapeSearch(e.target.value)} />
-                        {filteredUml.map((tpl) => (
+                        {UML_BLOCK_TEMPLATES.map((tpl) => (
                             <button key={tpl.type} type="button" className={styles.PaletteItem} draggable onClick={() => addBlock(tpl)} onDragStart={(e) => onDragStart(e, tpl.type)}>{tpl.name}</button>
                         ))}
-                        {filteredUml.length === 0 ? <Typography variant="body2" color="text.secondary">{t.editor.panelNotFound}</Typography> : null}
                     </div>
                 ) : leftPanel === 'bpmn' ? (
                     <div className={styles.LeftPanel}>
@@ -1804,10 +1817,12 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                             const memberSet = new Set(g.blockIds);
                             const blockMembers = elements.filter(isBlock).filter((b) => memberSet.has(b.id));
                             const lineMembers = elements.filter(isLine).filter((l) => memberSet.has(l.id));
-                            if (blockMembers.length + lineMembers.length < 2) return null;
+                            const pencilMembers = elements.filter(isPencil).filter((p) => memberSet.has(p.id));
+                            if (blockMembers.length + lineMembers.length + pencilMembers.length < 2) return null;
                             const xs: number[] = [], ys: number[] = [];
                             blockMembers.forEach((b) => { xs.push(b.x, b.x + b.width); ys.push(b.y, b.y + b.height); });
                             lineMembers.forEach((l) => { const c = resolveLineCoords(l, blockMap); xs.push(c.x1, c.x2); ys.push(c.y1, c.y2); });
+                            pencilMembers.forEach((p) => p.points.forEach(([px, py]) => { xs.push(px); ys.push(py); }));
                             if (!xs.length) return null;
                             const minX = Math.min(...xs);
                             const minY = Math.min(...ys);
@@ -1857,6 +1872,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                                         isMockup ? styles.Block_mockup : '',
                                         isImage ? styles.Block_image : '',
                                         isSelected && !isEditing ? styles.Block_selected : '',
+                                        isEditing && isText ? styles.Block_editing : '',
                                     ].filter(Boolean).join(' ')}
                                     style={{
                                         left: block.x, top: block.y, width: block.width, height: block.height,
@@ -1919,7 +1935,11 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                                     ) : isEr ? (
                                         <ErBlockContent block={block} />
                                     ) : isMockup ? (
-                                        <MockupBlockContent block={block} />
+                                        <MockupBlockContent
+                                            block={block}
+                                            interactive={canEdit && tool === 'select' && !isEditing}
+                                            onToggle={() => { pushHistory(); updateEl(block.id, { checked: !block.checked }); }}
+                                        />
                                     ) : isShape ? (
                                         <div className={styles.BlockShapeContent}>
                                             {block.type === 'diamond' ? (
@@ -2161,6 +2181,11 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                                 <button type="button" className={styles.AlignBtn} title={t.editor.distributeV} onClick={() => distributeBlocks('v')} style={{ fontSize: 13 }}>⇕</button>
                             </>
                         ) : null}
+                        <div className={styles.AlignBarDivider} />
+                        <button type="button" className={styles.AlignBtn} title={t.editor.group} onClick={groupSelected} style={{ fontSize: 15 }}>⊞</button>
+                        {groups.some((g) => g.blockIds.some((id) => selectedIds.has(id))) ? (
+                            <button type="button" className={styles.AlignBtn} title={t.editor.ungroup} onClick={ungroupSelected} style={{ fontSize: 15 }}>⊟</button>
+                        ) : null}
                     </div>
                 ) : null}
             </div>
@@ -2230,7 +2255,7 @@ function ErBlockContent({ block }: { block: DiagramCanvasBlock }) {
     );
 }
 
-function MockupBlockContent({ block }: { block: DiagramCanvasBlock }) {
+function MockupBlockContent({ block, interactive, onToggle }: { block: DiagramCanvasBlock; interactive?: boolean; onToggle?: () => void }) {
     if (block.type === 'mockup-button') {
         return (
             <div className={styles.MockupButton}>{block.title || 'Кнопка'}</div>
@@ -2242,9 +2267,19 @@ function MockupBlockContent({ block }: { block: DiagramCanvasBlock }) {
         );
     }
     if (block.type === 'mockup-checkbox') {
+        const checked = !!block.checked;
         return (
             <div className={styles.MockupCheckbox}>
-                <span className={styles.MockupCheckboxBox} />
+                <span
+                    className={`${styles.MockupCheckboxBox} ${checked ? styles.MockupCheckboxBox_checked : ''}`}
+                    role="checkbox"
+                    aria-checked={checked}
+                    style={interactive ? { cursor: 'pointer' } : undefined}
+                    onPointerDown={interactive ? (e) => e.stopPropagation() : undefined}
+                    onClick={interactive ? (e) => { e.stopPropagation(); onToggle?.(); } : undefined}
+                >
+                    {checked ? '✓' : ''}
+                </span>
                 <span>{block.title || 'Чекбокс'}</span>
             </div>
         );

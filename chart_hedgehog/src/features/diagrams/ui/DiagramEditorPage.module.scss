@@ -853,6 +853,21 @@
     border: none;
 }
 
+// When a text/comment block is being edited it can be empty and therefore
+// invisible — show a contour so the block can't get lost on the canvas.
+.Block_editing {
+    &.Block_text,
+    &.Block_text:hover {
+        background: color-mix(in srgb, var(--primary) 6%, transparent);
+        border: 1.5px dashed var(--primary);
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 14%, transparent);
+    }
+
+    &.Block_comment {
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 18%, transparent);
+    }
+}
+
 // ── SELECTION ──────────────────────────────────────────────────────────────────
 
 .Block_selected {
@@ -1041,6 +1056,10 @@
 }
 
 .Block_bpmn {
+    // BPMN events/gateways are intentionally small (48–72px) — drop the generic
+    // block minimums so the rendered box matches the stored width/height.
+    min-width: 0;
+    min-height: 0;
     padding: 0;
     background: transparent;
     border: none;
@@ -1105,6 +1124,9 @@
 }
 
 .Block_er {
+    // ER attributes/relations can be shorter than the generic 60px minimum.
+    min-width: 0;
+    min-height: 0;
     background: transparent;
     box-shadow: none;
 }
@@ -1241,6 +1263,10 @@
 // ── Mockup block styles ───────────────────────────────────────────────────────
 
 .Block_mockup {
+    // Buttons/inputs/checkboxes are short controls (28–36px tall) — allow them
+    // to render at their real size instead of the generic 80×60 minimum.
+    min-width: 0;
+    min-height: 0;
     padding: 0;
     overflow: hidden;
     background: transparent;
@@ -1307,13 +1333,26 @@
 }
 
 .MockupCheckboxBox {
-    display: inline-block;
+    box-sizing: border-box;
+    display: inline-flex;
     flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
     width: 16px;
     height: 16px;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1;
+    color: #fff;
     background: var(--block-fill, #fff);
     border: 2px solid var(--block-stroke, #6b7280);
     border-radius: 3px;
+}
+
+.MockupCheckboxBox_checked {
+    color: #fff;
+    background: var(--block-stroke, #2563eb);
+    border-color: var(--block-stroke, #2563eb);
 }
 
 .MockupCard {

@@ -227,6 +227,8 @@ const ru: AppTranslations = {
         alignBottom: 'По нижнему краю',
         distributeH: 'Распределить по горизонтали',
         distributeV: 'Распределить по вертикали',
+        group: 'Сгруппировать (Ctrl+G)',
+        ungroup: 'Разгруппировать (Ctrl+Shift+G)',
     },
 };
 
@@ -457,6 +459,8 @@ const en: AppTranslations = {
         alignBottom: 'Align bottom',
         distributeH: 'Distribute horizontally',
         distributeV: 'Distribute vertically',
+        group: 'Group (Ctrl+G)',
+        ungroup: 'Ungroup (Ctrl+Shift+G)',
     },
 };
 

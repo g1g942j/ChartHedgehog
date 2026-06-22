@@ -45,16 +45,10 @@ public class Diagram {
     @OneToMany(mappedBy = "diagram", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<DiagramBlock> blocks = new ArrayList<>();
 
-    @JsonIgnore
-    @ManyToMany(fetch = FetchType.LAZY)
-    @JoinTable(
-            name = "diagram_participants",
-            joinColumns = @JoinColumn(name = "diagram_id"),
-            inverseJoinColumns = @JoinColumn(name = "user_id")
-    )
-    private List<User> participants = new ArrayList<>();
-
-
+    // Participants are managed solely through the DiagramParticipant entity
+    // (which carries the role). A separate @ManyToMany to the same
+    // diagram_participants table caused a duplicate INSERT of (diagram_id,
+    // user_id) and a unique-constraint violation when adding a participant.
     @OneToMany(mappedBy = "diagram", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<DiagramParticipant> participantRoles = new ArrayList<>();
 
@@ -82,8 +76,6 @@ public class Diagram {
     public void setIsPublic(Boolean isPublic) { this.isPublic = isPublic; }
     public List<DiagramBlock> getBlocks() { return blocks; }
     public void setBlocks(List<DiagramBlock> blocks) { this.blocks = blocks; }
-    public List<User> getParticipants() { return participants; }
-    public void setParticipants(List<User> participants) { this.participants = participants; }
     public List<DiagramParticipant> getParticipantRoles() { return participantRoles; }
     public void setParticipantRoles(List<DiagramParticipant> participantRoles) { this.participantRoles = participantRoles; }
     public String getContent() { return content; }
@@ -93,14 +85,6 @@ public class Diagram {
     public String getTemplate() { return template; }
     public void setTemplate(String template) { this.template = template; }
 
-
-    public void addParticipant(User user) {
-        participants.add(user);
-    }
-
-    public void removeParticipant(User user) {
-        participants.remove(user);
-    }
 
     public void addBlock(DiagramBlock block) {
         blocks.add(block);
