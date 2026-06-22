@@ -548,6 +548,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
         setSaveStatus('saving');
         try {
             await saveDiagramEditorState(diagramId, { template, blocks: els });
+            await queryClient.invalidateQueries({ queryKey: ['diagramEditor', diagramId] });
             setSaveStatus('saved');
             setTimeout(() => setSaveStatus('idle'), 2000);
         } catch {

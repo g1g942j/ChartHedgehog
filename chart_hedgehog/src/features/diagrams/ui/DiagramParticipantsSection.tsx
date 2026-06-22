@@ -92,6 +92,7 @@ export function DiagramParticipantsSection(props: DiagramParticipantsSectionProp
                     {addError ? <Alert severity="error">{addError}</Alert> : null}
                     <div className={styles.AddRow}>
                         <Autocomplete
+                            filterOptions={(x) => x}
                             value={selectedUser}
                             inputValue={userSearchQuery}
                             options={userOptions}

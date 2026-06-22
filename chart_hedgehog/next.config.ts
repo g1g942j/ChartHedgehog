@@ -1,8 +1,11 @@
 import type { NextConfig } from 'next';
 
+const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8080';
+const wsUrl = apiUrl.replace(/^http/, 'ws');
+
 const nextConfig: NextConfig = {
   poweredByHeader: false,
-
+  output: 'standalone',
   async headers() {
     return [
       {
@@ -10,7 +13,7 @@ const nextConfig: NextConfig = {
         headers: [
           {
             key: 'Content-Security-Policy',
-            value: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' http://localhost:8080 ws://localhost:8080; frame-ancestors 'self'; form-action 'self'",
+            value: `default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' ${apiUrl} ${wsUrl}; frame-ancestors 'self'; form-action 'self'`,
           },
           { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
           { key: 'X-Content-Type-Options', value: 'nosniff' },
