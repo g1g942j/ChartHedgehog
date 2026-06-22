@@ -92,6 +92,8 @@ export type DiagramCanvasBlock = {
     rotation?: number;
     /** data URL для блоков типа 'image' */
     src?: string;
+    /** состояние «отмечено» для блока mockup-checkbox */
+    checked?: boolean;
 };
 
 export type DiagramLineElement = {

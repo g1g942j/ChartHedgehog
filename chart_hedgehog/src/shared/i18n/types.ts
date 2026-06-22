@@ -230,5 +230,8 @@ export type AppTranslations = {
         alignBottom: string;
         distributeH: string;
         distributeV: string;
+        // grouping
+        group: string;
+        ungroup: string;
     };
 };

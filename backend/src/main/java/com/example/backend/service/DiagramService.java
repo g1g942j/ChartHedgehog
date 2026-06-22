@@ -169,7 +169,6 @@ public class DiagramService {
             throw new RuntimeException("User is already a participant");
         }
 
-        diagram.getParticipants().add(user);
         diagram.getParticipantRoles().add(new DiagramParticipant(diagram, user, role));
         diagramRepository.save(diagram);
     }
@@ -177,8 +176,6 @@ public class DiagramService {
     @Transactional
     public void removeParticipant(Long diagramId, Long userId) {
         Diagram diagram = findById(diagramId);
-        User user = userService.findById(userId);
-        diagram.getParticipants().remove(user);
         diagram.getParticipantRoles().removeIf(p -> p.getUser().getId().equals(userId));
         diagramRepository.save(diagram);
     }

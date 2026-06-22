@@ -45,10 +45,9 @@ public class User implements UserDetails {
     @OneToMany(mappedBy = "owner", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private List<Diagram> ownedDiagrams = new ArrayList<>();
 
-    @JsonIgnore
-    @ManyToMany(mappedBy = "participants", fetch = FetchType.LAZY)
-    private List<Diagram> participatedDiagrams = new ArrayList<>();
-
+    // Participation is tracked via the DiagramParticipant entity (diagramRoles);
+    // the previous @ManyToMany inverse side was removed together with
+    // Diagram.participants to avoid a duplicate mapping of diagram_participants.
     @JsonIgnore
     @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private List<DiagramParticipant> diagramRoles = new ArrayList<>();
@@ -79,8 +78,6 @@ public class User implements UserDetails {
     public void setIsActive(Boolean isActive) { this.isActive = isActive; }
     public List<Diagram> getOwnedDiagrams() { return ownedDiagrams; }
     public void setOwnedDiagrams(List<Diagram> ownedDiagrams) { this.ownedDiagrams = ownedDiagrams; }
-    public List<Diagram> getParticipatedDiagrams() { return participatedDiagrams; }
-    public void setParticipatedDiagrams(List<Diagram> participatedDiagrams) { this.participatedDiagrams = participatedDiagrams; }
     public List<DiagramParticipant> getDiagramRoles() { return diagramRoles; }
     public void setDiagramRoles(List<DiagramParticipant> diagramRoles) { this.diagramRoles = diagramRoles; }
 
