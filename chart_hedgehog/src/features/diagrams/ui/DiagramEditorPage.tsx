@@ -486,16 +486,18 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
             const target = e.target as HTMLElement;
             if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
             const a = keyActionsRef.current;
-            if (e.ctrlKey && !e.shiftKey && e.key === 'z') { e.preventDefault(); a.undo(); }
-            else if (e.ctrlKey && (e.key === 'y' || (e.shiftKey && e.key === 'Z'))) { e.preventDefault(); a.redo(); }
-            else if (e.ctrlKey && e.shiftKey && (e.key === 'g' || e.key === 'G')) { e.preventDefault(); a.ungroupSelected(); }
-            else if (e.ctrlKey && !e.shiftKey && e.key === 'g') { e.preventDefault(); a.groupSelected(); }
-            else if (e.ctrlKey && e.key === 'c') { a.copySelected(); }
-            else if (e.ctrlKey && e.key === 'v') { e.preventDefault(); a.paste(); }
+            // Use e.code (physical key) instead of e.key so shortcuts work on
+            // non-Latin layouts (e.g. Russian, where S→ы, H→р, Z→я, etc.).
+            if (e.ctrlKey && !e.shiftKey && e.code === 'KeyZ') { e.preventDefault(); a.undo(); }
+            else if (e.ctrlKey && (e.code === 'KeyY' || (e.shiftKey && e.code === 'KeyZ'))) { e.preventDefault(); a.redo(); }
+            else if (e.ctrlKey && e.shiftKey && e.code === 'KeyG') { e.preventDefault(); a.ungroupSelected(); }
+            else if (e.ctrlKey && !e.shiftKey && e.code === 'KeyG') { e.preventDefault(); a.groupSelected(); }
+            else if (e.ctrlKey && e.code === 'KeyC') { a.copySelected(); }
+            else if (e.ctrlKey && e.code === 'KeyV') { e.preventDefault(); a.paste(); }
             else if ((e.key === 'Delete' || e.key === 'Backspace') && !e.ctrlKey) { e.preventDefault(); a.deleteSelected(); }
             else if (e.key === 'Escape') { setPendingPlacement(null); setSelectedIds(new Set()); setSelectedLineId(null); setEditing(null); }
-            else if (!e.ctrlKey && !e.shiftKey && !e.altKey && e.key === 's') { setTool('select'); }
-            else if (!e.ctrlKey && !e.shiftKey && !e.altKey && e.key === 'h') { setTool('pan'); }
+            else if (!e.ctrlKey && !e.shiftKey && !e.altKey && e.code === 'KeyS') { setTool('select'); }
+            else if (!e.ctrlKey && !e.shiftKey && !e.altKey && e.code === 'KeyH') { setTool('pan'); }
         };
         document.addEventListener('keydown', onKey);
         return () => document.removeEventListener('keydown', onKey);
