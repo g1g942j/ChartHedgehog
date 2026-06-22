@@ -171,7 +171,9 @@ export function DiagramParticipantsSection(props: DiagramParticipantsSectionProp
                             const canRemoveRow =
                                 (canManage && !isOwner) ||
                                 (isSelf && !isOwner);
-                            const canEditRole = canManage && !isOwner;
+                            // Only the diagram owner can change roles (enforced by
+                            // the backend) — everyone else sees a static badge.
+                            const canEditRole = currentUserIsOwner && !isOwner;
 
                             return (
                                 <li
@@ -202,7 +204,7 @@ export function DiagramParticipantsSection(props: DiagramParticipantsSectionProp
                                                         displayName,
                                                     )
                                                 }
-                                                options={currentUserIsOwner ? ownerRoleOptions : roleOptions}
+                                                options={ownerRoleOptions}
                                                 className={styles.RoleSelect}
                                             />
                                         ) : (
