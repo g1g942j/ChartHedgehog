@@ -109,6 +109,32 @@ export async function parseDrawioToElements(text: string): Promise<DiagramElemen
     for (const xml of xmls) {
         const doc = new DOMParser().parseFromString(sanitizeXml(xml), 'text/xml');
         const cells = Array.from(doc.querySelectorAll('mxCell'));
+
+        // Build cell-by-id index for resolving parent-relative coordinates
+        const cellIndex = new Map<string, Element>();
+        for (const cell of cells) {
+            const id = cell.getAttribute('id');
+            if (id) cellIndex.set(id, cell);
+        }
+
+        // Resolve absolute position by walking up the parent chain (cap at 10 levels)
+        const getAbsPos = (mxId: string, depth = 0): { x: number; y: number } => {
+            if (depth > 10) return { x: 0, y: 0 };
+            const cell = cellIndex.get(mxId);
+            if (!cell) return { x: 0, y: 0 };
+            const geo = cell.querySelector('mxGeometry');
+            if (!geo) return { x: 0, y: 0 };
+            const x = parseFloat(geo.getAttribute('x') ?? '0') || 0;
+            const y = parseFloat(geo.getAttribute('y') ?? '0') || 0;
+            const parentId = cell.getAttribute('parent') ?? '';
+            // '0' and '1' are draw.io root/layer — coordinates are already absolute
+            if (!parentId || parentId === '0' || parentId === '1') return { x, y };
+            const parentCell = cellIndex.get(parentId);
+            if (!parentCell || parentCell.getAttribute('vertex') !== '1') return { x, y };
+            const parentPos = getAbsPos(parentId, depth + 1);
+            return { x: x + parentPos.x, y: y + parentPos.y };
+        };
+
         const blockByMxId = new Map<string, DiagramCanvasBlock>();
 
         // вершины → блоки
@@ -117,18 +143,20 @@ export async function parseDrawioToElements(text: string): Promise<DiagramElemen
             const geo = cell.querySelector('mxGeometry');
             if (!geo) continue;
 
+            const mxId = cell.getAttribute('id') ?? '';
+            const absPos = getAbsPos(mxId);
+
             const block: DiagramCanvasBlock = {
                 id: did('v'),
                 type: styleToType(cell.getAttribute('style') ?? ''),
                 title: stripHtml(cell.getAttribute('value') ?? ''),
                 body: '',
-                x: Math.round(parseFloat(geo.getAttribute('x') ?? '0')),
-                y: Math.round(parseFloat(geo.getAttribute('y') ?? '0')),
-                width: Math.round(parseFloat(geo.getAttribute('width') ?? '120')),
-                height: Math.round(parseFloat(geo.getAttribute('height') ?? '60')),
+                x: Math.round(absPos.x),
+                y: Math.round(absPos.y),
+                width: Math.max(80, Math.round(parseFloat(geo.getAttribute('width') ?? '120') || 120)),
+                height: Math.max(40, Math.round(parseFloat(geo.getAttribute('height') ?? '60') || 60)),
             };
 
-            const mxId = cell.getAttribute('id');
             if (mxId) blockByMxId.set(mxId, block);
             elements.push(block);
         }

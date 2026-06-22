@@ -121,6 +121,7 @@ export type DiagramElement = DiagramCanvasBlock | DiagramLineElement | DiagramPe
 export type DiagramBlockTemplate = {
     type: DiagramBlockType;
     name: string;
+    nameRu?: string;
     title: string;
     body: string;
     width: number;
@@ -147,16 +148,16 @@ export const UML_BLOCK_TEMPLATES: DiagramBlockTemplate[] = [
 ];
 
 export const TEXT_BLOCK_TEMPLATES: DiagramBlockTemplate[] = [
-    { type: 'text', name: 'Текст', title: 'Текст', body: '', width: 200, height: 60 },
-    { type: 'comment', name: 'Комментарий', title: 'Комментарий', body: '', width: 220, height: 80 },
+    { type: 'text', name: 'Text', nameRu: 'Текст', title: '', body: '', width: 200, height: 60 },
+    { type: 'comment', name: 'Comment', nameRu: 'Комментарий', title: '', body: '', width: 220, height: 80 },
 ];
 
 export const SHAPE_BLOCK_TEMPLATES: DiagramBlockTemplate[] = [
-    { type: 'rectangle', name: 'Rectangle', title: 'Box', body: '', width: 160, height: 100 },
-    { type: 'circle', name: 'Circle', title: 'Circle', body: '', width: 120, height: 120 },
-    { type: 'diamond', name: 'Diamond', title: 'Decision', body: '', width: 160, height: 100 },
-    { type: 'triangle', name: 'Triangle', title: 'Start', body: '', width: 140, height: 120 },
-    { type: 'sticky', name: 'Sticky Note', title: 'Note here', body: '', width: 180, height: 140 },
+    { type: 'rectangle', name: 'Rectangle', nameRu: 'Прямоугольник', title: '', body: '', width: 160, height: 100 },
+    { type: 'circle', name: 'Circle', nameRu: 'Круг', title: '', body: '', width: 120, height: 120 },
+    { type: 'diamond', name: 'Diamond', nameRu: 'Ромб', title: '', body: '', width: 160, height: 100 },
+    { type: 'triangle', name: 'Triangle', nameRu: 'Треугольник', title: '', body: '', width: 140, height: 120 },
+    { type: 'sticky', name: 'Sticky Note', nameRu: 'Стикер', title: '', body: '', width: 180, height: 140 },
 ];
 
 export const BPMN_BLOCK_TEMPLATES: DiagramBlockTemplate[] = [

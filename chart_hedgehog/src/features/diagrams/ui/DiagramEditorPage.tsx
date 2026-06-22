@@ -12,13 +12,11 @@ import AlignVerticalBottomOutlinedIcon from '@mui/icons-material/AlignVerticalBo
 import AlignVerticalCenterOutlinedIcon from '@mui/icons-material/AlignVerticalCenterOutlined';
 import AlignVerticalTopOutlinedIcon from '@mui/icons-material/AlignVerticalTopOutlined';
 import ArrowBackOutlinedIcon from '@mui/icons-material/ArrowBackOutlined';
-import BackspaceOutlinedIcon from '@mui/icons-material/BackspaceOutlined';
 import CategoryOutlinedIcon from '@mui/icons-material/CategoryOutlined';
 import DarkModeOutlinedIcon from '@mui/icons-material/DarkModeOutlined';
 import DeleteOutlineOutlinedIcon from '@mui/icons-material/DeleteOutlineOutlined';
 import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
 import GestureOutlinedIcon from '@mui/icons-material/GestureOutlined';
-import GridOnOutlinedIcon from '@mui/icons-material/GridOnOutlined';
 import GroupsOutlinedIcon from '@mui/icons-material/GroupsOutlined';
 import ImageOutlinedIcon from '@mui/icons-material/ImageOutlined';
 import LightModeOutlinedIcon from '@mui/icons-material/LightModeOutlined';
@@ -29,7 +27,6 @@ import RedoOutlinedIcon from '@mui/icons-material/RedoOutlined';
 import TableChartOutlinedIcon from '@mui/icons-material/TableChartOutlined';
 import TextFieldsOutlinedIcon from '@mui/icons-material/TextFieldsOutlined';
 import TimelineOutlinedIcon from '@mui/icons-material/TimelineOutlined';
-import TuneOutlinedIcon from '@mui/icons-material/TuneOutlined';
 import UndoOutlinedIcon from '@mui/icons-material/UndoOutlined';
 
 import type { DragEvent, PointerEvent as ReactPointerEvent } from 'react';
@@ -37,6 +34,7 @@ import type { DragEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { apiFetch } from '@/shared/api/client';
 import { getSessionUser } from '@/shared/auth/session';
 import { useLocale } from '@/shared/i18n';
+import { LanguageSwitcher } from '@/widgets/LanguageSwitcher';
 import { useThemeMode } from '@/shared/theme';
 import { useToast } from '@/shared/toast';
 import { Alert } from '@/shared/ui/Alert';
@@ -81,6 +79,16 @@ import { type CollabBatchOp, useCollaboration } from '../model/useCollaboration'
 import { CollaborationAvatars } from './CollaborationAvatars';
 import { RemoteCursors } from './RemoteCursors';
 
+// ─── EraserIcon ───────────────────────────────────────────────────────────────
+
+function EraserIcon() {
+    return (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M15.14 3a2 2 0 0 0-1.41.59L2.59 14.73a2 2 0 0 0 0 2.83L5.04 20H20v-2h-8.59l7.02-7.02a2 2 0 0 0 0-2.83l-3.88-3.88A2 2 0 0 0 15.14 3zm0 2 3.88 3.88L12 15.9 8.12 12 15.14 5zM6.7 13.41l3.88 3.88-1.58 1.58-1.42.13H5.04l-2.45-2.44 4.11-3.15z"/>
+        </svg>
+    );
+}
+
 // ─── types ────────────────────────────────────────────────────────────────────
 
 type DrawingTool = 'select' | 'pan' | 'eraser' | 'pencil' | 'line';
@@ -100,19 +108,6 @@ const ZOOM_MAX = 3;
 const HISTORY_LIMIT = 50;
 const GRID_SIZE = 20;
 const ANCHOR_HIT_RADIUS = 14;
-
-const LINE_STYLE_OPTIONS: { value: LineStyle; label: string }[] = [
-    { value: 'solid', label: 'Сплошная' },
-    { value: 'dashed', label: 'Штриховая' },
-    { value: 'dotted', label: 'Пунктир' },
-];
-
-const ENDING_OPTIONS: { value: LineEnding; label: string }[] = [
-    { value: 'none', label: 'Нет' },
-    { value: 'arrow', label: 'Стрелка' },
-    { value: 'open-arrow', label: 'Открытая' },
-    { value: 'circle-end', label: 'Круг' },
-];
 
 const ANCHOR_SIDES: AnchorSide[] = ['top', 'right', 'bottom', 'left'];
 
@@ -199,7 +194,7 @@ export type DiagramEditorPageProps = {
 
 export function DiagramEditorPage(props: DiagramEditorPageProps) {
     const { diagramId, diagramName, currentUserRole, initialEditorState, isPublic: initialIsPublic } = props;
-    const { t } = useLocale();
+    const { t, locale } = useLocale();
     const { mode, toggleMode } = useThemeMode();
     const toast = useToast();
     const router = useRouter();
@@ -222,7 +217,12 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
     const [zoom, setZoom] = useState(1);
     const [panX, setPanX] = useState(40);
     const [panY, setPanY] = useState(40);
-    const [editing, setEditing] = useState<EditingBlock | null>(null);
+    const [editing, setEditing_] = useState<EditingBlock | null>(null);
+    const editingRef = useRef<EditingBlock | null>(null);
+    const setEditing = useCallback((val: EditingBlock | null) => {
+        editingRef.current = val;
+        setEditing_(val);
+    }, []);
     const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
     const [canvasError] = useState<string | null>(null);
     const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -251,7 +251,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
 
     // ── drawing state ─────────────────────────────────────────────────────────
     const [tool, setTool] = useState<DrawingTool>('select');
-    const [snapToGrid, setSnapToGrid] = useState(false);
+    const [snapToGrid] = useState(false);
     const [lineStyle, setLineStyle] = useState<LineStyle>('solid');
     const [lineStartEnding, setLineStartEnding] = useState<LineEnding>('none');
     const [lineEndEnding, setLineEndEnding] = useState<LineEnding>('arrow');
@@ -277,7 +277,8 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
     const [isExporting, setIsExporting] = useState(false);
     const [transparentBg, setTransparentBg] = useState(false);
     const [shapeSearch, setShapeSearch] = useState('');
-    const [showProps, setShowProps] = useState(false);
+    const [pendingPlacement, setPendingPlacement] = useState<DiagramElement[] | null>(null);
+    const [pendingCursorPos, setPendingCursorPos] = useState<{ x: number; y: number }>({ x: 100, y: 100 });
 
     // ── settings form ─────────────────────────────────────────────────────────
     const [renaming, setRenaming] = useState(diagramName);
@@ -466,7 +467,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
             else if (e.ctrlKey && e.key === 'c') { a.copySelected(); }
             else if (e.ctrlKey && e.key === 'v') { e.preventDefault(); a.paste(); }
             else if ((e.key === 'Delete' || e.key === 'Backspace') && !e.ctrlKey) { e.preventDefault(); a.deleteSelected(); }
-            else if (e.key === 'Escape') { setSelectedIds(new Set()); setSelectedLineId(null); setEditing(null); }
+            else if (e.key === 'Escape') { setPendingPlacement(null); setSelectedIds(new Set()); setSelectedLineId(null); setEditing(null); }
         };
         document.addEventListener('keydown', onKey);
         return () => document.removeEventListener('keydown', onKey);
@@ -642,6 +643,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
 
     // ── canvas pointer events ─────────────────────────────────────────────────
     const onCanvasPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+        if (pendingPlacement) return;
         if ((e.target as Element).closest('[data-block]')) return;
 
         if (tool === 'pan') {
@@ -689,6 +691,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
     const onCanvasPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
         const _cp = getCanvasPoint(e.clientX, e.clientY);
         sendCursor(_cp.x, _cp.y);
+        if (pendingPlacement) { setPendingCursorPos(_cp); }
         if (tool === 'pan') {
             if (!panRef.current) return;
             setPanX(panRef.current.scrollLeft + (e.clientX - panRef.current.startX));
@@ -786,17 +789,48 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
         setElements((cur) => [...cur, createBlock(tpl, id, 100 + cur.filter(isBlock).length * 20, 100)]);
     };
 
+    // Normalise imported/preset elements to origin (0,0) so they can follow the cursor
+    const normalizeForPlacement = (els: DiagramElement[]): DiagramElement[] => {
+        let minX = Infinity, minY = Infinity;
+        for (const el of els) {
+            if (isBlock(el)) { minX = Math.min(minX, el.x); minY = Math.min(minY, el.y); }
+        }
+        if (!isFinite(minX)) return els;
+        return els.map((el) => {
+            if (isBlock(el)) return { ...el, x: el.x - minX, y: el.y - minY };
+            if (isLine(el)) return { ...el, x1: el.x1 - minX, y1: el.y1 - minY, x2: el.x2 - minX, y2: el.y2 - minY };
+            if (isPencil(el)) return { ...el, points: el.points.map(([px, py]) => [px - minX, py - minY] as [number, number]) };
+            return el;
+        });
+    };
+
+    const placePendingElements = (cursorX: number, cursorY: number) => {
+        if (!pendingPlacement) return;
+        const idMap = new Map<string, string>();
+        pendingPlacement.filter(isBlock).forEach((b) => idMap.set(b.id, generateId(b.type)));
+        const placed = pendingPlacement.map((el) => {
+            if (isBlock(el)) return { ...el, id: idMap.get(el.id)!, x: Math.round(cursorX + el.x), y: Math.round(cursorY + el.y) };
+            if (isLine(el)) return { ...el, id: generateId('line'), fromBlockId: el.fromBlockId ? idMap.get(el.fromBlockId) : undefined, toBlockId: el.toBlockId ? idMap.get(el.toBlockId) : undefined, x1: cursorX + el.x1, y1: cursorY + el.y1, x2: cursorX + el.x2, y2: cursorY + el.y2 };
+            if (isPencil(el)) return { ...el, id: generateId('pencil'), points: el.points.map(([px, py]) => [cursorX + px, cursorY + py] as [number, number]) };
+            return el;
+        });
+        pushHistory();
+        setElements((cur) => [...cur, ...placed]);
+        setPendingPlacement(null);
+    };
+
     // ── editing ───────────────────────────────────────────────────────────────
     const startEditing = (block: DiagramCanvasBlock) => {
         if (!canEdit || tool !== 'select' || block.type === 'image') return;
         setEditing({ id: block.id, title: block.title, body: block.body });
     };
-    const commitEdit = () => {
-        if (!editing) return;
+    const commitEdit = useCallback(() => {
+        const e = editingRef.current;
+        if (!e) return;
         pushHistory();
-        updateEl(editing.id, { title: editing.title, body: editing.body });
+        updateEl(e.id, { title: e.title, body: e.body });
         setEditing(null);
-    };
+    }, [pushHistory, updateEl, setEditing]);
 
     // ── drag-drop ─────────────────────────────────────────────────────────────
     const onDragStart = (e: DragEvent<HTMLButtonElement>, type: string) =>
@@ -816,6 +850,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
 
     // ── block pointer events ──────────────────────────────────────────────────
     const onBlockPointerDown = (e: ReactPointerEvent<HTMLDivElement>, block: DiagramCanvasBlock) => {
+        if (pendingPlacement) return;
         if (tool === 'pan') return;
         if (tool === 'eraser') { pushHistory(); removeEl(block.id); return; }
         if (!canEdit || editing?.id === block.id) return;
@@ -982,6 +1017,8 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
             onclone: (doc) => {
                 const vars: Record<string, string> = { '--text-color': '#000000', '--primary': '#1a56db', '--primary-contrast': '#ffffff', '--surface': '#ffffff', '--bg-soft': '#f8f8f8', '--border': '#d0d0d0', '--text-secondary': '#555555' };
                 Object.entries(vars).forEach(([k, v]) => doc.documentElement.style.setProperty(k, v));
+                doc.querySelectorAll<HTMLElement>('[aria-label="Resize block"]').forEach((el) => { el.style.display = 'none'; });
+                doc.querySelectorAll<HTMLElement>('[class*="AnchorDot"]').forEach((el) => { el.style.display = 'none'; });
             },
             ...(bounds ?? {}),
         });
@@ -1042,8 +1079,17 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
     const selectTool = (tl: DrawingTool) => { setTool(tl); if (tl !== 'select' && tl !== 'pan') setLeftPanel('none'); };
 
     // ── options ───────────────────────────────────────────────────────────────
-    const lineStyleOpts = useMemo<SelectOption[]>(() => LINE_STYLE_OPTIONS.map((o) => ({ value: o.value, label: o.label })), []);
-    const endingOpts = useMemo<SelectOption[]>(() => ENDING_OPTIONS.map((o) => ({ value: o.value, label: o.label })), []);
+    const lineStyleOpts = useMemo<SelectOption[]>(() => [
+        { value: 'solid', label: t.editor.lineStyleSolid },
+        { value: 'dashed', label: t.editor.lineStyleDashed },
+        { value: 'dotted', label: t.editor.lineStyleDotted },
+    ], [t]);
+    const endingOpts = useMemo<SelectOption[]>(() => [
+        { value: 'none', label: t.editor.endingNone },
+        { value: 'arrow', label: t.editor.endingArrow },
+        { value: 'open-arrow', label: t.editor.endingOpenArrow },
+        { value: 'circle-end', label: t.editor.endingCircle },
+    ], [t]);
     const isDrawing = tool === 'line' || tool === 'pencil';
 
     const filteredShapes = useMemo(() => { const q = shapeSearch.toLowerCase(); return q ? SHAPE_BLOCK_TEMPLATES.filter((t) => t.name.toLowerCase().includes(q)) : SHAPE_BLOCK_TEMPLATES; }, [shapeSearch]);
@@ -1061,9 +1107,8 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
     };
 
     const addPreset = (preset: FlowchartPreset) => {
-        const c = viewportCenter();
-        pushHistory();
-        setElements((cur) => [...cur, ...preset.generate(Math.round(c.x - 70), Math.round(c.y - 60))]);
+        const normalized = normalizeForPlacement(preset.generate(0, 0));
+        setPendingPlacement(normalized);
         setLeftPanel('none');
     };
 
@@ -1102,10 +1147,10 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
             const text = await file.text();
             const { parseDrawioToElements } = await import('../api/drawioImport');
             const imported = await parseDrawioToElements(text);
-            pushHistory();
-            setElements((cur) => [...cur, ...imported]);
+            const normalized = normalizeForPlacement(imported);
+            setPendingPlacement(normalized);
             setLeftPanel('none');
-            toast.success(`Импортировано элементов: ${imported.length}`);
+            toast.success(`Импортировано блоков: ${imported.filter(isBlock).length}. Нажмите на холст для размещения.`);
         } catch (err) {
             toast.error(err instanceof Error ? err.message : 'Ошибка импорта draw.io');
         }
@@ -1176,23 +1221,24 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                 <div className={styles.TopBarRight}>
                     {canEdit && saveStatus !== 'idle' ? (
                         <span className={`${styles.SaveStatus} ${styles[`SaveStatus_${saveStatus}`]}`}>
-                            {saveStatus === 'saving' ? 'Сохранение…' : saveStatus === 'saved' ? '✓ Сохранено' : 'Ошибка сохранения'}
+                            {saveStatus === 'saving' ? t.editor.savingStatus : saveStatus === 'saved' ? t.editor.savedStatus : t.editor.saveErrorStatus}
                         </span>
                     ) : null}
                     <CollaborationAvatars users={remoteUsers} />
                     {canEdit ? (
                         <>
-                            <button type="button" className={styles.TopBarBtn} title="Отменить (Ctrl+Z)" onClick={undo}><UndoOutlinedIcon fontSize="small" /></button>
-                            <button type="button" className={styles.TopBarBtn} title="Повторить (Ctrl+Y)" onClick={redo}><RedoOutlinedIcon fontSize="small" /></button>
+                            <button type="button" className={styles.TopBarBtn} title={t.editor.undo} onClick={undo}><UndoOutlinedIcon fontSize="small" /></button>
+                            <button type="button" className={styles.TopBarBtn} title={t.editor.redo} onClick={redo}><RedoOutlinedIcon fontSize="small" /></button>
                         </>
                     ) : null}
-                    <button type="button" className={styles.TopBarBtn} title={mode === 'dark' ? 'Светлая тема' : 'Тёмная тема'} onClick={toggleMode}>
+                    <LanguageSwitcher showCode />
+                    <button type="button" className={styles.TopBarBtn} title={mode === 'dark' ? t.editor.themeDark : t.editor.themeLight} onClick={toggleMode}>
                         {mode === 'dark' ? <DarkModeOutlinedIcon fontSize="small" /> : <LightModeOutlinedIcon fontSize="small" />}
                     </button>
-                    <button type="button" className={styles.TopBarBtn} title="Скачать диаграмму" onClick={() => { setExportOpen(true); setMenuOpen(false); }}>
+                    <button type="button" className={styles.TopBarBtn} title={t.editor.download} onClick={() => { setExportOpen(true); setMenuOpen(false); }}>
                         <FileDownloadOutlinedIcon fontSize="small" />
                     </button>
-                    <button type="button" className={`${styles.TopBarBtn} ${menuOpen ? styles.TopBarBtn_active : ''}`} title="Настройки" onClick={() => { setMenuOpen((o) => !o); setLeftPanel('none'); }}>
+                    <button type="button" className={`${styles.TopBarBtn} ${menuOpen ? styles.TopBarBtn_active : ''}`} title={t.editor.settings} onClick={() => { setMenuOpen((o) => !o); setLeftPanel('none'); }}>
                         <MoreVertOutlinedIcon fontSize="small" />
                     </button>
                 </div>
@@ -1201,9 +1247,9 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
             {/* ── SAVE ERROR BANNER ── */}
             {saveStatus === 'error' ? (
                 <div className={styles.SaveErrorBanner}>
-                    <span>⚠ Изменения не сохранены</span>
+                    <span>{t.editor.saveErrorBanner}</span>
                     <button type="button" onClick={() => void saveNow(elementsRef.current)}>
-                        Повторить
+                        {t.editor.retryBtn}
                     </button>
                 </div>
             ) : null}
@@ -1228,9 +1274,9 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                         )}
                         {currentUserRole === 'OWNER' ? (
                             <div className={styles.SettingsRow}>
-                                <Typography variant="caption" style={{ fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-secondary, #888)' }}>Доступ</Typography>
+                                <Typography variant="caption" style={{ fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-secondary, #888)' }}>{t.editor.settingsAccess}</Typography>
                                 <label className={styles.PublicToggle}>
-                                    <span>Публичный просмотр</span>
+                                    <span>{t.editor.settingsPublicView}</span>
                                     <button type="button" role="switch" aria-checked={isPublic} className={`${styles.ToggleSwitch} ${isPublic ? styles.ToggleSwitch_on : ''}`} onClick={() => void handleTogglePublic()} />
                                 </label>
                                 <div className={styles.ShareLinkRow}>
@@ -1264,11 +1310,11 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                 <>
                     <div className={styles.ModalOverlay} onClick={() => !isExporting && setExportOpen(false)} />
                     <div className={styles.Modal} role="dialog" aria-modal="true">
-                        <Typography variant="h6" style={{ marginBottom: 4 }}>Скачать диаграмму</Typography>
-                        <Typography variant="body2" color="text.secondary" style={{ marginBottom: 16 }}>Выберите формат файла</Typography>
+                        <Typography variant="h6" style={{ marginBottom: 4 }}>{t.editor.exportTitle}</Typography>
+                        <Typography variant="body2" color="text.secondary" style={{ marginBottom: 16 }}>{t.editor.exportSubtitle}</Typography>
                         <label className={styles.TransparentToggle}>
                             <input type="checkbox" checked={transparentBg} onChange={(e) => setTransparentBg(e.target.checked)} />
-                            Прозрачный фон
+                            {t.editor.exportTransparentBg}
                         </label>
                         <div className={styles.FormatGrid}>
                             {(['json', 'svg', 'png', 'jpeg', 'pdf'] as ExportFormat[]).map((fmt) => (
@@ -1288,125 +1334,119 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
 
                 {/* ── LEFT TOOLBAR ── */}
                 <nav className={styles.LeftToolbar}>
-                    <button type="button" title="Выбор (S)" className={`${styles.ToolBtn} ${tool === 'select' ? styles.ToolBtn_active : ''}`} onClick={() => selectTool('select')}>
+                    <button type="button" title={t.editor.toolSelect} className={`${styles.ToolBtn} ${tool === 'select' ? styles.ToolBtn_active : ''}`} onClick={() => selectTool('select')}>
                         <NearMeOutlinedIcon fontSize="small" />
                     </button>
-                    <button type="button" title="Перемещение по холсту (H)" className={`${styles.ToolBtn} ${tool === 'pan' ? styles.ToolBtn_active : ''}`} onClick={() => selectTool('pan')}>
+                    <button type="button" title={t.editor.toolPan} className={`${styles.ToolBtn} ${tool === 'pan' ? styles.ToolBtn_active : ''}`} onClick={() => selectTool('pan')}>
                         <PanToolOutlinedIcon fontSize="small" />
                     </button>
                     {canEdit ? (
                         <>
-                            <button type="button" title="Ластик" className={`${styles.ToolBtn} ${tool === 'eraser' ? styles.ToolBtn_active : ''}`} onClick={() => selectTool('eraser')}>
-                                <BackspaceOutlinedIcon fontSize="small" />
+                            <button type="button" title={t.editor.toolEraser} className={`${styles.ToolBtn} ${tool === 'eraser' ? styles.ToolBtn_active : ''}`} onClick={() => selectTool('eraser')}>
+                                <EraserIcon />
                             </button>
-                            <button type="button" title="Карандаш" className={`${styles.ToolBtn} ${tool === 'pencil' ? styles.ToolBtn_active : ''}`} onClick={() => selectTool('pencil')}>
+                            <button type="button" title={t.editor.toolPencil} className={`${styles.ToolBtn} ${tool === 'pencil' ? styles.ToolBtn_active : ''}`} onClick={() => selectTool('pencil')}>
                                 <GestureOutlinedIcon fontSize="small" />
                             </button>
-                            <button type="button" title="Линия" className={`${styles.ToolBtn} ${tool === 'line' ? styles.ToolBtn_active : ''} ${leftPanel === 'line-config' ? styles.ToolBtn_panel : ''}`} onClick={() => { setTool('line'); togglePanel('line-config'); }}>
+                            <button type="button" title={t.editor.toolLine} className={`${styles.ToolBtn} ${tool === 'line' ? styles.ToolBtn_active : ''} ${leftPanel === 'line-config' ? styles.ToolBtn_panel : ''}`} onClick={() => { setTool('line'); togglePanel('line-config'); }}>
                                 <TimelineOutlinedIcon fontSize="small" />
                             </button>
                             <div className={styles.ToolbarDivider} />
-                            <button type="button" title="Фигуры" className={`${styles.ToolBtn} ${leftPanel === 'shapes' ? styles.ToolBtn_panel : ''}`} onClick={() => togglePanel('shapes')}>
+                            <button type="button" title={t.editor.toolShapes} className={`${styles.ToolBtn} ${leftPanel === 'shapes' ? styles.ToolBtn_panel : ''}`} onClick={() => togglePanel('shapes')}>
                                 <CategoryOutlinedIcon fontSize="small" />
                             </button>
-                            <button type="button" title="Текст и комментарии" className={`${styles.ToolBtn} ${leftPanel === 'text-panel' ? styles.ToolBtn_panel : ''}`} onClick={() => togglePanel('text-panel')}>
+                            <button type="button" title={t.editor.toolText} className={`${styles.ToolBtn} ${leftPanel === 'text-panel' ? styles.ToolBtn_panel : ''}`} onClick={() => togglePanel('text-panel')}>
                                 <TextFieldsOutlinedIcon fontSize="small" />
                             </button>
-                            <button type="button" title="Шаблоны" className={`${styles.ToolBtn} ${['templates','uml','bpmn','er','mockup','flowchart'].includes(leftPanel) ? styles.ToolBtn_panel : ''}`} onClick={() => togglePanel('templates')}>
+                            <button type="button" title={t.editor.toolTemplates} className={`${styles.ToolBtn} ${['templates','uml','bpmn','er','mockup','flowchart'].includes(leftPanel) ? styles.ToolBtn_panel : ''}`} onClick={() => togglePanel('templates')}>
                                 <TableChartOutlinedIcon fontSize="small" />
                             </button>
-                            <button type="button" title="Вставить изображение" className={styles.ToolBtn} onClick={() => imageInputRef.current?.click()}>
+                            <button type="button" title={t.editor.toolImage} className={styles.ToolBtn} onClick={() => imageInputRef.current?.click()}>
                                 <ImageOutlinedIcon fontSize="small" />
                             </button>
                             <div className={styles.ToolbarDivider} />
-                            <button type="button" title={snapToGrid ? 'Сетка вкл.' : 'Сетка выкл.'} className={`${styles.ToolBtn} ${snapToGrid ? styles.ToolBtn_active : ''}`} onClick={() => setSnapToGrid((v) => !v)}>
-                                <GridOnOutlinedIcon fontSize="small" />
-                            </button>
-                            <button type="button" title="Свойства" className={`${styles.ToolBtn} ${showProps ? styles.ToolBtn_active : ''}`} onClick={() => setShowProps((v) => !v)}>
-                                <TuneOutlinedIcon fontSize="small" />
-                            </button>
                         </>
                     ) : null}
                     <div className={styles.ToolbarSpacer} />
-                    <button type="button" className={styles.ZoomBtn} title="Уменьшить" onClick={() => clampZoom(zoom - ZOOM_STEP)}>−</button>
-                    <button type="button" className={styles.ZoomLabel} title="Сбросить" onClick={() => { setZoom(1); setPanX(40); setPanY(40); }}>{Math.round(zoom * 100)}%</button>
-                    <button type="button" className={styles.ZoomBtn} title="Увеличить" onClick={() => clampZoom(zoom + ZOOM_STEP)}>+</button>
+                    <button type="button" className={styles.ZoomBtn} title={t.editor.zoomOut} onClick={() => clampZoom(zoom - ZOOM_STEP)}>−</button>
+                    <button type="button" className={styles.ZoomLabel} title={t.editor.zoomReset} onClick={() => { setZoom(1); setPanX(40); setPanY(40); }}>{Math.round(zoom * 100)}%</button>
+                    <button type="button" className={styles.ZoomBtn} title={t.editor.zoomIn} onClick={() => clampZoom(zoom + ZOOM_STEP)}>+</button>
                 </nav>
 
                 {/* ── LEFT PANELS ── */}
                 {leftPanel === 'shapes' ? (
                     <div className={styles.LeftPanel}>
-                        <Typography variant="subtitle2" className={styles.PanelTitle}>Базовые элементы</Typography>
-                        <input className={styles.PanelSearch} placeholder="Поиск фигур…" value={shapeSearch} onChange={(e) => setShapeSearch(e.target.value)} />
+                        <Typography variant="subtitle2" className={styles.PanelTitle}>{t.editor.panelBasicShapes}</Typography>
+                        <input className={styles.PanelSearch} placeholder={t.editor.panelSearchShapes} value={shapeSearch} onChange={(e) => setShapeSearch(e.target.value)} />
                         {filteredShapes.map((tpl) => (
-                            <button key={tpl.type} type="button" className={`${styles.PaletteItem} ${styles[`PaletteItem_${tpl.type}`]}`} draggable onClick={() => addBlock(tpl)} onDragStart={(e) => onDragStart(e, tpl.type)}>{tpl.name}</button>
+                            <button key={tpl.type} type="button" className={`${styles.PaletteItem} ${styles[`PaletteItem_${tpl.type}`]}`} draggable onClick={() => addBlock(tpl)} onDragStart={(e) => onDragStart(e, tpl.type)}>{locale === 'ru' && tpl.nameRu ? tpl.nameRu : tpl.name}</button>
                         ))}
-                        {filteredShapes.length === 0 ? <Typography variant="body2" color="text.secondary">Ничего не найдено</Typography> : null}
+                        {filteredShapes.length === 0 ? <Typography variant="body2" color="text.secondary">{t.editor.panelNotFound}</Typography> : null}
                     </div>
                 ) : leftPanel === 'text-panel' ? (
                     <div className={styles.LeftPanel}>
-                        <Typography variant="subtitle2" className={styles.PanelTitle}>Текстовые блоки</Typography>
-                        {TEXT_BLOCK_TEMPLATES.map((tpl) => (
-                            <button key={tpl.type} type="button" className={`${styles.PaletteItem} ${styles[`PaletteItem_${tpl.type}`]}`} draggable onClick={() => addBlock(tpl)} onDragStart={(e) => onDragStart(e, tpl.type)}>{tpl.name}</button>
+                        <Typography variant="subtitle2" className={styles.PanelTitle}>{t.editor.panelTextBlocks}</Typography>
+                        {TEXT_BLOCK_TEMPLATES.filter((tpl) => tpl.type !== 'comment').map((tpl) => (
+                            <button key={tpl.type} type="button" className={`${styles.PaletteItem} ${styles[`PaletteItem_${tpl.type}`]}`} draggable onClick={() => addBlock(tpl)} onDragStart={(e) => onDragStart(e, tpl.type)}>{locale === 'ru' && tpl.nameRu ? tpl.nameRu : tpl.name}</button>
                         ))}
-                        <Typography variant="caption" color="text.secondary" style={{ marginTop: 4 }}>Двойной клик — редактировать</Typography>
+                        <Typography variant="caption" color="text.secondary" style={{ marginTop: 4 }}>{t.editor.panelDblClick}</Typography>
                     </div>
                 ) : leftPanel === 'templates' ? (
                     <div className={styles.LeftPanel}>
-                        <Typography variant="subtitle2" className={styles.PanelTitle}>Библиотеки</Typography>
-                        <button type="button" className={styles.PaletteItem} onClick={() => setLeftPanel('uml')}><TableChartOutlinedIcon fontSize="small" style={{ marginRight: 6 }} />UML</button>
-                        <button type="button" className={styles.PaletteItem} onClick={() => setLeftPanel('bpmn')}>BPMN</button>
-                        <button type="button" className={styles.PaletteItem} onClick={() => setLeftPanel('er')}>ER-диаграмма</button>
-                        <button type="button" className={styles.PaletteItem} onClick={() => setLeftPanel('mockup')}>Mockup / UI</button>
-                        <button type="button" className={styles.PaletteItem} onClick={() => setLeftPanel('flowchart')}>Пресеты</button>
+                        <Typography variant="subtitle2" className={styles.PanelTitle}>{t.editor.panelLibraries}</Typography>
+                        <button type="button" className={styles.PaletteItem} onClick={() => setLeftPanel('uml')}><TableChartOutlinedIcon fontSize="small" style={{ marginRight: 6 }} />{t.editor.panelUml}</button>
+                        <button type="button" className={styles.PaletteItem} onClick={() => setLeftPanel('bpmn')}>{t.editor.panelBpmn}</button>
+                        <button type="button" className={styles.PaletteItem} onClick={() => setLeftPanel('er')}>{t.editor.panelEr}</button>
+                        <button type="button" className={styles.PaletteItem} onClick={() => setLeftPanel('mockup')}>{t.editor.panelMockup}</button>
+                        <button type="button" className={styles.PaletteItem} onClick={() => setLeftPanel('flowchart')}>{t.editor.panelPresets}</button>
                         <div className={styles.ToolbarDivider} />
-                        <button type="button" className={styles.PaletteItem} onClick={() => drawioInputRef.current?.click()}>Импорт draw.io</button>
+                        <button type="button" className={styles.PaletteItem} onClick={() => drawioInputRef.current?.click()}>{t.editor.panelImportDrawio}</button>
                     </div>
                 ) : leftPanel === 'uml' ? (
                     <div className={styles.LeftPanel}>
-                        <button type="button" className={styles.PanelBack} onClick={() => setLeftPanel('templates')}>← Библиотеки</button>
-                        <Typography variant="subtitle2" className={styles.PanelTitle}>UML-блоки</Typography>
-                        <input className={styles.PanelSearch} placeholder="Поиск…" value={shapeSearch} onChange={(e) => setShapeSearch(e.target.value)} />
+                        <button type="button" className={styles.PanelBack} onClick={() => setLeftPanel('templates')}>{t.editor.panelBack}</button>
+                        <Typography variant="subtitle2" className={styles.PanelTitle}>{t.editor.panelUml}</Typography>
+                        <input className={styles.PanelSearch} placeholder={t.editor.panelSearch} value={shapeSearch} onChange={(e) => setShapeSearch(e.target.value)} />
                         {filteredUml.map((tpl) => (
                             <button key={tpl.type} type="button" className={styles.PaletteItem} draggable onClick={() => addBlock(tpl)} onDragStart={(e) => onDragStart(e, tpl.type)}>{tpl.name}</button>
                         ))}
-                        {filteredUml.length === 0 ? <Typography variant="body2" color="text.secondary">Ничего не найдено</Typography> : null}
+                        {filteredUml.length === 0 ? <Typography variant="body2" color="text.secondary">{t.editor.panelNotFound}</Typography> : null}
                     </div>
                 ) : leftPanel === 'bpmn' ? (
                     <div className={styles.LeftPanel}>
-                        <button type="button" className={styles.PanelBack} onClick={() => setLeftPanel('templates')}>← Библиотеки</button>
-                        <Typography variant="subtitle2" className={styles.PanelTitle}>BPMN</Typography>
-                        <input className={styles.PanelSearch} placeholder="Поиск…" value={shapeSearch} onChange={(e) => setShapeSearch(e.target.value)} />
+                        <button type="button" className={styles.PanelBack} onClick={() => setLeftPanel('templates')}>{t.editor.panelBack}</button>
+                        <Typography variant="subtitle2" className={styles.PanelTitle}>{t.editor.panelBpmn}</Typography>
+                        <input className={styles.PanelSearch} placeholder={t.editor.panelSearch} value={shapeSearch} onChange={(e) => setShapeSearch(e.target.value)} />
                         {filteredBpmn.map((tpl) => (
                             <button key={tpl.type} type="button" className={`${styles.PaletteItem} ${styles[`PaletteItem_${tpl.type}`]}`} draggable onClick={() => addBlock(tpl)} onDragStart={(e) => onDragStart(e, tpl.type)}>{tpl.name}</button>
                         ))}
-                        {filteredBpmn.length === 0 ? <Typography variant="body2" color="text.secondary">Ничего не найдено</Typography> : null}
+                        {filteredBpmn.length === 0 ? <Typography variant="body2" color="text.secondary">{t.editor.panelNotFound}</Typography> : null}
                     </div>
                 ) : leftPanel === 'er' ? (
                     <div className={styles.LeftPanel}>
-                        <button type="button" className={styles.PanelBack} onClick={() => setLeftPanel('templates')}>← Библиотеки</button>
-                        <Typography variant="subtitle2" className={styles.PanelTitle}>ER-диаграмма</Typography>
-                        <input className={styles.PanelSearch} placeholder="Поиск…" value={shapeSearch} onChange={(e) => setShapeSearch(e.target.value)} />
+                        <button type="button" className={styles.PanelBack} onClick={() => setLeftPanel('templates')}>{t.editor.panelBack}</button>
+                        <Typography variant="subtitle2" className={styles.PanelTitle}>{t.editor.panelEr}</Typography>
+                        <input className={styles.PanelSearch} placeholder={t.editor.panelSearch} value={shapeSearch} onChange={(e) => setShapeSearch(e.target.value)} />
                         {filteredEr.map((tpl) => (
                             <button key={tpl.type} type="button" className={`${styles.PaletteItem} ${styles[`PaletteItem_${tpl.type}`]}`} draggable onClick={() => addBlock(tpl)} onDragStart={(e) => onDragStart(e, tpl.type)}>{tpl.name}</button>
                         ))}
-                        {filteredEr.length === 0 ? <Typography variant="body2" color="text.secondary">Ничего не найдено</Typography> : null}
+                        {filteredEr.length === 0 ? <Typography variant="body2" color="text.secondary">{t.editor.panelNotFound}</Typography> : null}
                     </div>
                 ) : leftPanel === 'mockup' ? (
                     <div className={styles.LeftPanel}>
-                        <button type="button" className={styles.PanelBack} onClick={() => setLeftPanel('templates')}>← Библиотеки</button>
-                        <Typography variant="subtitle2" className={styles.PanelTitle}>Mockup / UI</Typography>
-                        <input className={styles.PanelSearch} placeholder="Поиск…" value={shapeSearch} onChange={(e) => setShapeSearch(e.target.value)} />
+                        <button type="button" className={styles.PanelBack} onClick={() => setLeftPanel('templates')}>{t.editor.panelBack}</button>
+                        <Typography variant="subtitle2" className={styles.PanelTitle}>{t.editor.panelMockup}</Typography>
+                        <input className={styles.PanelSearch} placeholder={t.editor.panelSearch} value={shapeSearch} onChange={(e) => setShapeSearch(e.target.value)} />
                         {filteredMockup.map((tpl) => (
                             <button key={tpl.type} type="button" className={`${styles.PaletteItem} ${styles[`PaletteItem_${tpl.type}`]}`} draggable onClick={() => addBlock(tpl)} onDragStart={(e) => onDragStart(e, tpl.type)}>{tpl.name}</button>
                         ))}
-                        {filteredMockup.length === 0 ? <Typography variant="body2" color="text.secondary">Ничего не найдено</Typography> : null}
+                        {filteredMockup.length === 0 ? <Typography variant="body2" color="text.secondary">{t.editor.panelNotFound}</Typography> : null}
                     </div>
                 ) : leftPanel === 'flowchart' ? (
                     <div className={styles.LeftPanel}>
-                        <button type="button" className={styles.PanelBack} onClick={() => setLeftPanel('templates')}>← Библиотеки</button>
-                        <Typography variant="subtitle2" className={styles.PanelTitle}>Пресеты</Typography>
-                        <Typography variant="caption" color="text.secondary" style={{ marginBottom: 8, display: 'block' }}>Нажмите — вставит набор блоков в центр холста</Typography>
+                        <button type="button" className={styles.PanelBack} onClick={() => setLeftPanel('templates')}>{t.editor.panelBack}</button>
+                        <Typography variant="subtitle2" className={styles.PanelTitle}>{t.editor.panelPresets}</Typography>
+                        <Typography variant="caption" color="text.secondary" style={{ marginBottom: 8, display: 'block' }}>{t.editor.panelPresetHint}</Typography>
                         {FLOWCHART_PRESETS.map((preset) => (
                             <button key={preset.name} type="button" className={styles.PresetItem} onClick={() => addPreset(preset)}>
                                 <span className={styles.PresetName}>{preset.name}</span>
@@ -1416,10 +1456,10 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                     </div>
                 ) : leftPanel === 'line-config' ? (
                     <div className={styles.LeftPanel}>
-                        <Typography variant="subtitle2" className={styles.PanelTitle}>Линия</Typography>
-                        <Select label="Стиль" value={lineStyle} onChange={(v) => setLineStyle(v as LineStyle)} options={lineStyleOpts} />
-                        <Select label="Начало" value={lineStartEnding} onChange={(v) => setLineStartEnding(v as LineEnding)} options={endingOpts} />
-                        <Select label="Конец" value={lineEndEnding} onChange={(v) => setLineEndEnding(v as LineEnding)} options={endingOpts} />
+                        <Typography variant="subtitle2" className={styles.PanelTitle}>{t.editor.panelLineConfig}</Typography>
+                        <Select label={t.editor.lineStyle} value={lineStyle} onChange={(v) => setLineStyle(v as LineStyle)} options={lineStyleOpts} />
+                        <Select label={t.editor.lineStart} value={lineStartEnding} onChange={(v) => setLineStartEnding(v as LineEnding)} options={endingOpts} />
+                        <Select label={t.editor.lineEnd} value={lineEndEnding} onChange={(v) => setLineEndEnding(v as LineEnding)} options={endingOpts} />
                     </div>
                 ) : null}
 
@@ -1428,13 +1468,20 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
 
                 <div
                     ref={canvasRef}
-                    className={`${styles.Canvas} ${isDrawing ? styles.Canvas_drawing : ''} ${tool === 'eraser' ? styles.Canvas_eraser : ''} ${tool === 'pan' ? (isPanning ? styles.Canvas_grabbing : styles.Canvas_pan) : ''}`}
+                    className={`${styles.Canvas} ${isDrawing ? styles.Canvas_drawing : ''} ${tool === 'eraser' ? styles.Canvas_eraser : ''} ${tool === 'pan' ? (isPanning ? styles.Canvas_grabbing : styles.Canvas_pan) : ''} ${pendingPlacement ? styles.Canvas_placing : ''}`}
                     onDragOver={(e) => e.preventDefault()}
                     onDrop={onDrop}
                     onPointerDown={onCanvasPointerDown}
                     onPointerMove={onCanvasPointerMove}
                     onPointerUp={onCanvasPointerUp}
-                    onClick={() => { setSelectedIds(new Set()); setSelectedLineId(null); }}
+                    onClick={(e) => {
+                        if (pendingPlacement) {
+                            const pt = getCanvasPoint(e.clientX, e.clientY);
+                            placePendingElements(pt.x, pt.y);
+                            return;
+                        }
+                        setSelectedIds(new Set()); setSelectedLineId(null);
+                    }}
                 >
                     <div ref={canvasContentRef} className={styles.CanvasContent} style={{ transform: `translate(${panX}px, ${panY}px) scale(${zoom})` }}>
                         <svg className={styles.CanvasSvg} width="100000" height="100000">
@@ -1549,16 +1596,16 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                                                 onKeyDown={(e) => { if (e.key === 'Escape') setEditing(null); }}
                                             />
                                         ) : (
-                                            <div className={styles.BlockEditForm}>
+                                            <div className={styles.BlockEditForm}
+                                                onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) commitEdit(); }}
+                                            >
                                                 <input className={styles.BlockEditTitle} value={editing.title} autoFocus
                                                     onChange={(e) => setEditing({ ...editing, title: e.target.value })}
-                                                    onBlur={commitEdit}
                                                     onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); commitEdit(); } if (e.key === 'Escape') setEditing(null); }}
                                                 />
                                                 {!isShape && !isBpmn && !isEr && !isMockup ? (
                                                     <textarea className={styles.BlockEditBody} value={editing.body}
                                                         onChange={(e) => setEditing({ ...editing, body: e.target.value })}
-                                                        onBlur={commitEdit}
                                                         onKeyDown={(e) => { if (e.key === 'Escape') setEditing(null); }}
                                                     />
                                                 ) : null}
@@ -1633,6 +1680,23 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                         })}
                     </div>
 
+                    {/* ── PENDING PLACEMENT GHOST (screen coords: canvas coords × zoom + pan) ── */}
+                    {pendingPlacement ? pendingPlacement.filter(isBlock).map((b) => (
+                        <div
+                            key={b.id}
+                            className={`${styles.Block} ${styles[`Block_${b.type}`]}`}
+                            style={{
+                                position: 'absolute',
+                                left: (pendingCursorPos.x + b.x) * zoom + panX,
+                                top: (pendingCursorPos.y + b.y) * zoom + panY,
+                                width: b.width * zoom,
+                                height: b.height * zoom,
+                                opacity: 0.45,
+                                pointerEvents: 'none',
+                            }}
+                        />
+                    )) : null}
+
                     {/* ── MINIMAP ── */}
                     <RemoteCursors cursors={remoteCursors} zoom={zoom} panX={panX} panY={panY} />
 
@@ -1643,7 +1707,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                         const vpW = canvasSize.w / zoom;
                         const vpH = canvasSize.h / zoom;
                         return (
-                            <div className={styles.Minimap} title="Миникарта">
+                            <div className={styles.Minimap} title={t.editor.minimap}>
                                 <svg width={MINI_W} height={MINI_H}
                                     viewBox={`${minimapBounds.x} ${minimapBounds.y} ${minimapBounds.width} ${minimapBounds.height}`}
                                     style={{ width: MINI_W, height: MINI_H }}
@@ -1679,27 +1743,27 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                 </div>
 
                 {/* ── PROPERTIES PANEL ── */}
-                {showProps ? (
+                {canEdit ? (
                     <div className={styles.PropertiesPanel}>
-                        <Typography variant="subtitle2" className={styles.PanelTitle}>Свойства</Typography>
+                        <Typography variant="subtitle2" className={styles.PanelTitle}>{t.editor.toolProps}</Typography>
                         {selectedBlock ? (
                             <>
                                 <div className={styles.PropRow}>
-                                    <label className={styles.PropLabel}>Заливка</label>
+                                    <label className={styles.PropLabel}>{t.editor.propsFill}</label>
                                     <input type="color" className={styles.ColorInput}
                                         value={selectedBlock.fillColor ?? '#ffffff'}
                                         onChange={(e) => { pushHistory(); updateEl(selectedBlock.id, { fillColor: e.target.value }); }}
                                     />
                                 </div>
                                 <div className={styles.PropRow}>
-                                    <label className={styles.PropLabel}>Цвет рамки</label>
+                                    <label className={styles.PropLabel}>{t.editor.propsStrokeColor}</label>
                                     <input type="color" className={styles.ColorInput}
                                         value={selectedBlock.strokeColor ?? '#1a56db'}
                                         onChange={(e) => { pushHistory(); updateEl(selectedBlock.id, { strokeColor: e.target.value }); }}
                                     />
                                 </div>
                                 <div className={styles.PropRow}>
-                                    <label className={styles.PropLabel}>Толщина рамки</label>
+                                    <label className={styles.PropLabel}>{t.editor.propsStrokeWidth}</label>
                                     <input type="range" min="1" max="6" step="1"
                                         value={selectedBlock.strokeWidth ?? 2}
                                         onChange={(e) => updateEl(selectedBlock.id, { strokeWidth: Number(e.target.value) })}
@@ -1709,7 +1773,7 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                                     <span className={styles.PropValue}>{selectedBlock.strokeWidth ?? 2}px</span>
                                 </div>
                                 <div className={styles.PropRow}>
-                                    <label className={styles.PropLabel}>Размер текста</label>
+                                    <label className={styles.PropLabel}>{t.editor.propsFontSize}</label>
                                     <input type="range" min="10" max="36" step="1"
                                         value={selectedBlock.fontSize ?? 13}
                                         onChange={(e) => updateEl(selectedBlock.id, { fontSize: Number(e.target.value) })}
@@ -1719,14 +1783,14 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                                     <span className={styles.PropValue}>{selectedBlock.fontSize ?? 13}px</span>
                                 </div>
                                 <div className={styles.PropRow}>
-                                    <label className={styles.PropLabel}>Цвет текста</label>
+                                    <label className={styles.PropLabel}>{t.editor.propsTextColor}</label>
                                     <input type="color" className={styles.ColorInput}
                                         value={selectedBlock.textColor ?? '#000000'}
                                         onChange={(e) => { pushHistory(); updateEl(selectedBlock.id, { textColor: e.target.value }); }}
                                     />
                                 </div>
                                 <div className={styles.PropRow}>
-                                    <label className={styles.PropLabel}>Начертание</label>
+                                    <label className={styles.PropLabel}>{t.editor.propsStyle}</label>
                                     <button type="button"
                                         className={`${styles.FmtBtn}${selectedBlock.fontWeight === 'bold' ? ` ${styles.FmtBtn_on}` : ''}`}
                                         onClick={() => { pushHistory(); updateEl(selectedBlock.id, { fontWeight: selectedBlock.fontWeight === 'bold' ? 'normal' : 'bold' }); }}
@@ -1740,14 +1804,14 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                         ) : selectedLine ? (
                             <>
                                 <div className={styles.PropRow}>
-                                    <label className={styles.PropLabel}>Цвет линии</label>
+                                    <label className={styles.PropLabel}>{t.editor.propsLineColor}</label>
                                     <input type="color" className={styles.ColorInput}
                                         value={selectedLine.strokeColor ?? '#000000'}
                                         onChange={(e) => { pushHistory(); updateLine(selectedLine.id, { strokeColor: e.target.value }); }}
                                     />
                                 </div>
                                 <div className={styles.PropRow}>
-                                    <label className={styles.PropLabel}>Толщина</label>
+                                    <label className={styles.PropLabel}>{t.editor.propsLineWidth}</label>
                                     <input type="range" min="1" max="8" step="1"
                                         value={selectedLine.strokeWidth ?? 2}
                                         onChange={(e) => updateLine(selectedLine.id, { strokeWidth: Number(e.target.value) })}
@@ -1756,12 +1820,12 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
                                     />
                                     <span className={styles.PropValue}>{selectedLine.strokeWidth ?? 2}px</span>
                                 </div>
-                                <Select label="Стиль" value={selectedLine.style} onChange={(v) => { pushHistory(); updateLine(selectedLine.id, { style: v as LineStyle }); }} options={lineStyleOpts} />
-                                <Select label="Конец" value={selectedLine.endEnding} onChange={(v) => { pushHistory(); updateLine(selectedLine.id, { endEnding: v as LineEnding }); }} options={endingOpts} />
+                                <Select label={t.editor.lineStyle} value={selectedLine.style} onChange={(v) => { pushHistory(); updateLine(selectedLine.id, { style: v as LineStyle }); }} options={lineStyleOpts} />
+                                <Select label={t.editor.lineEnd} value={selectedLine.endEnding} onChange={(v) => { pushHistory(); updateLine(selectedLine.id, { endEnding: v as LineEnding }); }} options={endingOpts} />
                             </>
                         ) : (
                             <Typography variant="body2" color="text.secondary" style={{ marginTop: 8 }}>
-                                Выберите блок или линию
+                                {t.editor.propsNoSelection}
                             </Typography>
                         )}
                     </div>
@@ -1769,18 +1833,18 @@ export function DiagramEditorPage(props: DiagramEditorPageProps) {
 
                 {canEdit && selectedIds.size >= 2 ? (
                     <div className={styles.AlignBar}>
-                        <button type="button" className={styles.AlignBtn} title="По левому краю" onClick={() => alignBlocks('left')}><AlignHorizontalLeftOutlinedIcon fontSize="small" /></button>
-                        <button type="button" className={styles.AlignBtn} title="По центру (гор.)" onClick={() => alignBlocks('center-h')}><AlignHorizontalCenterOutlinedIcon fontSize="small" /></button>
-                        <button type="button" className={styles.AlignBtn} title="По правому краю" onClick={() => alignBlocks('right')}><AlignHorizontalRightOutlinedIcon fontSize="small" /></button>
+                        <button type="button" className={styles.AlignBtn} title={t.editor.alignLeft} onClick={() => alignBlocks('left')}><AlignHorizontalLeftOutlinedIcon fontSize="small" /></button>
+                        <button type="button" className={styles.AlignBtn} title={t.editor.alignCenterH} onClick={() => alignBlocks('center-h')}><AlignHorizontalCenterOutlinedIcon fontSize="small" /></button>
+                        <button type="button" className={styles.AlignBtn} title={t.editor.alignRight} onClick={() => alignBlocks('right')}><AlignHorizontalRightOutlinedIcon fontSize="small" /></button>
                         <div className={styles.AlignBarDivider} />
-                        <button type="button" className={styles.AlignBtn} title="По верхнему краю" onClick={() => alignBlocks('top')}><AlignVerticalTopOutlinedIcon fontSize="small" /></button>
-                        <button type="button" className={styles.AlignBtn} title="По центру (верт.)" onClick={() => alignBlocks('center-v')}><AlignVerticalCenterOutlinedIcon fontSize="small" /></button>
-                        <button type="button" className={styles.AlignBtn} title="По нижнему краю" onClick={() => alignBlocks('bottom')}><AlignVerticalBottomOutlinedIcon fontSize="small" /></button>
+                        <button type="button" className={styles.AlignBtn} title={t.editor.alignTop} onClick={() => alignBlocks('top')}><AlignVerticalTopOutlinedIcon fontSize="small" /></button>
+                        <button type="button" className={styles.AlignBtn} title={t.editor.alignCenterV} onClick={() => alignBlocks('center-v')}><AlignVerticalCenterOutlinedIcon fontSize="small" /></button>
+                        <button type="button" className={styles.AlignBtn} title={t.editor.alignBottom} onClick={() => alignBlocks('bottom')}><AlignVerticalBottomOutlinedIcon fontSize="small" /></button>
                         {selectedIds.size >= 3 ? (
                             <>
                                 <div className={styles.AlignBarDivider} />
-                                <button type="button" className={styles.AlignBtn} title="Распределить по горизонтали" onClick={() => distributeBlocks('h')} style={{ fontSize: 13 }}>⇔</button>
-                                <button type="button" className={styles.AlignBtn} title="Распределить по вертикали" onClick={() => distributeBlocks('v')} style={{ fontSize: 13 }}>⇕</button>
+                                <button type="button" className={styles.AlignBtn} title={t.editor.distributeH} onClick={() => distributeBlocks('h')} style={{ fontSize: 13 }}>⇔</button>
+                                <button type="button" className={styles.AlignBtn} title={t.editor.distributeV} onClick={() => distributeBlocks('v')} style={{ fontSize: 13 }}>⇕</button>
                             </>
                         ) : null}
                     </div>

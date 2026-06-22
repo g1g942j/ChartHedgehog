@@ -139,4 +139,91 @@ export type AppTranslations = {
         removeConfirm: (displayName: string) => string;
     };
     roles: Record<string, string>;
+    editor: {
+        // tools
+        toolSelect: string;
+        toolPan: string;
+        toolEraser: string;
+        toolPencil: string;
+        toolLine: string;
+        toolShapes: string;
+        toolText: string;
+        toolTemplates: string;
+        toolImage: string;
+        toolGrid: string;
+        toolProps: string;
+        // zoom
+        zoomIn: string;
+        zoomOut: string;
+        zoomReset: string;
+        // topbar
+        undo: string;
+        redo: string;
+        themeDark: string;
+        themeLight: string;
+        download: string;
+        settings: string;
+        savingStatus: string;
+        savedStatus: string;
+        saveErrorStatus: string;
+        saveErrorBanner: string;
+        retryBtn: string;
+        // panels
+        panelBasicShapes: string;
+        panelTextBlocks: string;
+        panelLibraries: string;
+        panelUml: string;
+        panelBpmn: string;
+        panelEr: string;
+        panelMockup: string;
+        panelPresets: string;
+        panelImportDrawio: string;
+        panelLineConfig: string;
+        panelBack: string;
+        panelSearch: string;
+        panelSearchShapes: string;
+        panelDblClick: string;
+        panelNotFound: string;
+        panelPresetHint: string;
+        // line options
+        lineStyleSolid: string;
+        lineStyleDashed: string;
+        lineStyleDotted: string;
+        endingNone: string;
+        endingArrow: string;
+        endingOpenArrow: string;
+        endingCircle: string;
+        lineStyle: string;
+        lineStart: string;
+        lineEnd: string;
+        // properties panel
+        propsFill: string;
+        propsStrokeColor: string;
+        propsStrokeWidth: string;
+        propsFontSize: string;
+        propsTextColor: string;
+        propsStyle: string;
+        propsLineColor: string;
+        propsLineWidth: string;
+        propsNoSelection: string;
+        // export modal
+        exportTitle: string;
+        exportSubtitle: string;
+        exportTransparentBg: string;
+        // settings panel
+        settingsAccess: string;
+        settingsPublicView: string;
+        // misc
+        minimap: string;
+        selectElement: string;
+        // align
+        alignLeft: string;
+        alignCenterH: string;
+        alignRight: string;
+        alignTop: string;
+        alignCenterV: string;
+        alignBottom: string;
+        distributeH: string;
+        distributeV: string;
+    };
 };
